@@ -1015,11 +1015,12 @@
     }
   </style>
   <script>
-    // Configuration: Override WALLET_ORIGIN for deployment
-    // Set window.__CONFIG__.WALLET_ORIGIN to your PassWallet deployment URL
-    window.__CONFIG__ = {
-      WALLET_ORIGIN: '' // Leave empty for auto-detect (localhost), or set to deployed wallet URL
-    };
+    // Configuration: loads wallet origin from /api/config on Vercel,
+    // or falls back to auto-detect for local dev
+    window.__CONFIG__ = { WALLET_ORIGIN: '' };
+    fetch('/api/config').then(r => r.json()).then(c => {
+      if (c.WALLET_ORIGIN) window.__CONFIG__.WALLET_ORIGIN = c.WALLET_ORIGIN;
+    }).catch(() => {});
   </script>
 </head>
 <body>

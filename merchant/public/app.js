@@ -13,9 +13,14 @@ document.addEventListener('DOMContentLoaded', () => {
     { id: '6', name: 'Minimal Desk Lamp', price: 129.99, category: 'accessories', gradient: 'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)' },
   ];
 
-  // Wallet origin: set via window.__CONFIG__ or auto-detect based on hostname
-  const WALLET_ORIGIN = (window.__CONFIG__ && window.__CONFIG__.WALLET_ORIGIN)
-    || (window.location.hostname === 'merchant.demo' ? 'http://wallet.demo:3001' : 'http://localhost:3001');
+  // Wallet origin: resolved lazily so async config fetch has time to complete
+  function getWalletOrigin() {
+    if (window.__CONFIG__ && window.__CONFIG__.WALLET_ORIGIN) {
+      return window.__CONFIG__.WALLET_ORIGIN;
+    }
+    if (window.location.hostname === 'merchant.demo') return 'http://wallet.demo:3001';
+    return 'http://localhost:3001';
+  }
 
   // ---------------------------------------------------------------------------
   // DOM references
@@ -242,7 +247,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (existing) existing.remove();
 
       const iframe = document.createElement('iframe');
-      iframe.src = `${WALLET_ORIGIN}/checkout.html`;
+      iframe.src = `${getWalletOrigin()}/checkout.html`;
       iframe.setAttribute('allow', 'publickey-credentials-get; publickey-credentials-create');
       iframe.id = 'wallet-iframe';
       iframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:16px;';
@@ -280,7 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 5. postMessage Communication
   // ---------------------------------------------------------------------------
   window.addEventListener('message', (event) => {
-    if (event.origin !== WALLET_ORIGIN) return;
+    if (event.origin !== getWalletOrigin()) return;
 
     const { type, data } = event.data;
 
@@ -300,7 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 merchantName: 'TechStore',
               },
             },
-            WALLET_ORIGIN
+            getWalletOrigin()
           );
         }
         break;
