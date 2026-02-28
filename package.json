@@ -1,0 +1,23 @@
+{
+  "name": "cross-origin-passkey-demo",
+  "version": "1.0.0",
+  "description": "Demo: Cross-origin passkey authentication in iframes for digital wallet checkout",
+  "private": true,
+  "scripts": {
+    "start": "concurrently \"node merchant/server.js\" \"node wallet/server.js\"",
+    "start:merchant": "node merchant/server.js",
+    "start:wallet": "node wallet/server.js",
+    "test": "npx playwright test",
+    "test:ui": "npx playwright test --ui"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "^11.0.0",
+    "concurrently": "^9.1.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "uuid": "^11.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}
