@@ -2,7 +2,6 @@
 
 A working demo that proves **WebAuthn passkeys work within cross-origin iframes** -- enabling embedded checkout experiences where users authenticate with biometrics, select a payment card, and complete checkout without ever leaving the merchant's site.
 
-Inspired by [Skipify](https://skipify.com)'s embedded checkout UX.
 
 ## Architecture
 
