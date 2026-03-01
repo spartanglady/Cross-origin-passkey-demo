@@ -1,9 +1,12 @@
 const { v4: uuidv4 } = require('uuid');
 
 // In-memory stores
-const users = new Map();        // email -> user object
-const credentials = new Map();  // credentialID (base64url) -> credential object
-const challenges = new Map();   // visitorId -> challenge (temporary, for WebAuthn ceremonies)
+const store = {
+  users: new Map(), // email -> User object
+  credentials: new Map(), // credentialID (base64url) -> Credential object
+  challenges: new Map(), // visitorId -> challenge (temporary, for WebAuthn ceremonies)
+  otps: new Map(), // email -> otp string
+};
 
 // Card brands with their styles
 const CARD_TEMPLATES = [
@@ -41,28 +44,28 @@ function createUser(email, displayName) {
     cards: generateMockCards(2),
     createdAt: new Date().toISOString(),
   };
-  users.set(email, user);
+  store.users.set(email, user);
   return user;
 }
 
 function getUser(email) {
-  return users.get(email) || null;
+  return store.users.get(email) || null;
 }
 
 function getUserById(id) {
-  for (const user of users.values()) {
+  for (const user of store.users.values()) {
     if (user.id === id) return user;
   }
   return null;
 }
 
 function addCredential(email, credential) {
-  credentials.set(credential.id, { ...credential, email });
+  store.credentials.set(credential.id, { ...credential, email });
 }
 
 function getCredentialsByEmail(email) {
   const result = [];
-  for (const [id, cred] of credentials) {
+  for (const [id, cred] of store.credentials) {
     if (cred.email === email) {
       result.push(cred);
     }
@@ -71,24 +74,38 @@ function getCredentialsByEmail(email) {
 }
 
 function getCredentialById(id) {
-  return credentials.get(id) || null;
+  return store.credentials.get(id) || null;
 }
 
 function updateCredentialCounter(id, newCounter) {
-  const cred = credentials.get(id);
+  const cred = store.credentials.get(id);
   if (cred) {
     cred.counter = newCounter;
   }
 }
 
 function setChallenge(key, challenge) {
-  challenges.set(key, challenge);
+  store.challenges.set(key, challenge);
 }
 
 function getChallenge(key) {
-  const challenge = challenges.get(key);
-  challenges.delete(key);
+  const challenge = store.challenges.get(key);
+  store.challenges.delete(key);
   return challenge;
+}
+
+// OTP Management
+function setOTP(email, otp) {
+  store.otps.set(email, otp);
+  // In a real app, you'd set an expiry here
+}
+
+function getOTP(email) {
+  return store.otps.get(email);
+}
+
+function clearOTP(email) {
+  store.otps.delete(email);
 }
 
 // Pre-seed a demo user
@@ -110,4 +127,7 @@ module.exports = {
   setChallenge,
   getChallenge,
   generateMockCards,
+  setOTP,
+  getOTP,
+  clearOTP,
 };

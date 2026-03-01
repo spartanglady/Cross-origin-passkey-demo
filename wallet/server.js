@@ -12,9 +12,9 @@ const store = require('./store');
 const app = express();
 const PORT = 3001;
 
-// For Vercel: use WALLET_URL env var to determine RP_ID, or fall back to localhost
-const WALLET_URL = process.env.WALLET_URL || `http://localhost:${PORT}`;
-const MERCHANT_URL = process.env.MERCHANT_URL || 'http://localhost:3000';
+// For Vercel: use WALLET_URL env var to determine RP_ID, or fall back to .localhost tests
+const WALLET_URL = process.env.WALLET_URL || `http://wallet.localhost:${PORT}`;
+const MERCHANT_URL = process.env.MERCHANT_URL || 'http://store.localhost:3000';
 
 // Extract hostname for WebAuthn RP ID (e.g., "my-wallet.vercel.app" or "localhost")
 const RP_ID = new URL(WALLET_URL).hostname;
@@ -23,13 +23,15 @@ const RP_NAME = 'PassWallet';
 const ALLOWED_ORIGINS = [
   WALLET_URL,
   `http://localhost:${PORT}`,
-  'http://wallet.demo:3001',
+  `http://127.0.0.1:${PORT}`,
+  'http://wallet.localhost:3001',
 ].filter(Boolean);
 
 const ALLOWED_MERCHANT_ORIGINS = [
   MERCHANT_URL,
   'http://localhost:3000',
-  'http://merchant.demo:3000',
+  'http://127.0.0.1:3000',
+  'http://store.localhost:3000',
 ].filter(Boolean);
 
 // Middleware
@@ -54,11 +56,56 @@ app.post('/api/lookup', (req, res) => {
   if (!email) return res.status(400).json({ error: 'Email required' });
 
   const user = store.getUser(email);
+  const hasPasskey = user ? store.getCredentialsByEmail(email).length > 0 : false;
+
   if (user) {
-    res.json({ exists: true, displayName: user.displayName });
+    res.json({ exists: true, hasPasskey, displayName: user.displayName });
   } else {
-    res.json({ exists: false });
+    res.json({ exists: false, hasPasskey: false });
   }
+});
+
+// Send OTP
+app.post('/api/auth/otp/send', (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email required' });
+
+  // Generate a mock 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  store.setOTP(email, otp);
+
+  // Simulated email delivery
+  console.log(`\n=============================================`);
+  console.log(`✉️ MOCK EMAIL TO: ${email}`);
+  console.log(`🔑 PassWallet Login Code: ${otp}`);
+  console.log(`=============================================\n`);
+
+  res.json({ success: true, message: 'OTP sent to email simulator' });
+});
+
+// Verify OTP
+app.post('/api/auth/otp/verify', (req, res) => {
+  const { email, otp } = req.body;
+  if (!email || !otp) return res.status(400).json({ error: 'Email and OTP required' });
+
+  const storedOtp = store.getOTP(email);
+  if (!storedOtp || storedOtp !== otp) {
+    return res.status(401).json({ error: 'Invalid or expired OTP' });
+  }
+
+  // OTP Valid
+  store.clearOTP(email);
+
+  let user = store.getUser(email);
+  if (!user) {
+    // Implicit registration on first successful OTP
+    user = store.createUser(email, email.split('@')[0]);
+  }
+
+  res.json({
+    verified: true,
+    user: { displayName: user.displayName, cards: user.cards }
+  });
 });
 
 // Registration: Generate options
@@ -71,12 +118,10 @@ app.post('/api/register/options', async (req, res) => {
 
     // Check if user already exists
     let user = store.getUser(email);
-    if (user) {
-      return res.status(409).json({ error: 'User already exists' });
+    if (!user) {
+      // Create user
+      user = store.createUser(email, displayName);
     }
-
-    // Create user
-    user = store.createUser(email, displayName);
 
     const existingCredentials = store.getCredentialsByEmail(email);
 
@@ -151,13 +196,14 @@ app.post('/api/register/verify', async (req, res) => {
 // Authentication: Generate options
 app.post('/api/login/options', async (req, res) => {
   try {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email required' });
+    const { email } = req.body || {};
+    let userCredentials = [];
 
-    const user = store.getUser(email);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    const userCredentials = store.getCredentialsByEmail(email);
+    if (email) {
+      const user = store.getUser(email);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      userCredentials = store.getCredentialsByEmail(email);
+    }
 
     const options = await generateAuthenticationOptions({
       rpID: RP_ID,
@@ -169,9 +215,10 @@ app.post('/api/login/options', async (req, res) => {
       userVerification: 'preferred',
     });
 
-    store.setChallenge(email, options.challenge);
+    const sessionId = email || Math.random().toString(36).slice(2);
+    store.setChallenge(sessionId, options.challenge);
 
-    res.json(options);
+    res.json({ options, sessionId });
   } catch (error) {
     console.error('Login options error:', error);
     res.status(500).json({ error: 'Failed to generate authentication options' });
@@ -181,12 +228,13 @@ app.post('/api/login/options', async (req, res) => {
 // Authentication: Verify response
 app.post('/api/login/verify', async (req, res) => {
   try {
-    const { email, response } = req.body;
-    if (!email || !response) {
-      return res.status(400).json({ error: 'Email and response required' });
+    const { email, sessionId, response } = req.body;
+    if (!response) {
+      return res.status(400).json({ error: 'Response required' });
     }
 
-    const expectedChallenge = store.getChallenge(email);
+    const lookupKey = email || sessionId;
+    const expectedChallenge = store.getChallenge(lookupKey);
     if (!expectedChallenge) {
       return res.status(400).json({ error: 'Challenge not found or expired' });
     }
@@ -194,6 +242,12 @@ app.post('/api/login/verify', async (req, res) => {
     const credential = store.getCredentialById(response.id);
     if (!credential) {
       return res.status(400).json({ error: 'Credential not found' });
+    }
+
+    const targetEmail = email || credential.email;
+    const user = store.getUser(targetEmail);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
     }
 
     const verification = await verifyAuthenticationResponse({
@@ -210,8 +264,7 @@ app.post('/api/login/verify', async (req, res) => {
 
     if (verification.verified) {
       store.updateCredentialCounter(response.id, verification.authenticationInfo.newCounter);
-      const user = store.getUser(email);
-      res.json({ verified: true, user: { displayName: user.displayName, cards: user.cards } });
+      res.json({ verified: true, user: { email: user.email, displayName: user.displayName, cards: user.cards } });
     } else {
       res.status(400).json({ verified: false, error: 'Authentication failed' });
     }

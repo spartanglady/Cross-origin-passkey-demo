@@ -1,609 +1,123 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PassWallet Checkout</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+  <title>PassWallet Secure Checkout</title>
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #ffffff;
-      color: #1d1d1f;
-      overflow-x: hidden;
-      min-height: 100vh;
-    }
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
-    /* Step transitions */
-    .step {
-      display: none;
-      padding: 32px 24px;
-      animation: stepIn 0.35s ease-out;
-    }
-    .step.active {
-      display: block;
-    }
-
-    @keyframes stepIn {
-      from { opacity: 0; transform: translateY(16px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* Spinner */
-    .spinner {
-      width: 24px; height: 24px;
-      border: 3px solid #e5e7eb;
-      border-top-color: #667eea;
-      border-radius: 50%;
-      animation: spin 0.6s linear infinite;
-      display: inline-block;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* Button base */
-    .btn-primary {
-      width: 100%;
-      height: 48px;
-      border: none;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #667eea, #764ba2);
-      color: white;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(102,126,234,0.4); }
-    .btn-primary:active { transform: translateY(0); }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
-    .btn-primary.loading { pointer-events: none; }
-
-    /* Input base */
-    .input-field {
-      width: 100%;
-      height: 48px;
-      border: 2px solid #e5e7eb;
-      border-radius: 12px;
-      padding: 0 16px;
-      font-size: 16px;
-      outline: none;
-      transition: all 0.3s ease;
-      font-family: inherit;
-    }
-    .input-field:focus {
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102,126,234,0.15);
-    }
-
-    /* Card carousel */
-    .card-carousel {
-      display: flex;
-      gap: 16px;
-      overflow-x: auto;
-      scroll-snap-type: x mandatory;
-      -webkit-overflow-scrolling: touch;
-      padding: 8px 0;
-      scrollbar-width: none;
-    }
-    .card-carousel::-webkit-scrollbar { display: none; }
-
-    .payment-card {
-      flex-shrink: 0;
-      width: 280px;
-      height: 170px;
-      border-radius: 16px;
-      padding: 20px;
-      color: white;
-      cursor: pointer;
-      scroll-snap-align: center;
-      transition: all 0.3s ease;
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-    .payment-card:hover { transform: translateY(-2px); }
-    .payment-card.selected {
-      box-shadow: 0 0 0 3px #667eea, 0 8px 24px rgba(0,0,0,0.2);
-      transform: scale(1.02);
-    }
-
-    .payment-card-brand {
-      font-size: 18px;
-      font-weight: 700;
-      letter-spacing: 1px;
-    }
-
-    .payment-card-number {
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 16px;
-      letter-spacing: 2px;
-    }
-
-    .payment-card-name {
-      font-size: 13px;
-      opacity: 0.9;
-      margin-top: 4px;
-    }
-
-    .payment-card-details {
-      display: flex;
-      justify-content: space-between;
-      font-size: 12px;
-      opacity: 0.9;
-    }
-
-    /* Checkmark animation */
-    .checkmark-circle {
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #43e97b, #38f9d7);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 24px;
-      animation: scaleIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    }
-    @keyframes scaleIn {
-      from { transform: scale(0); }
-      to { transform: scale(1); }
-    }
-    .checkmark-svg {
-      width: 40px;
-      height: 40px;
-      stroke: white;
-      stroke-width: 3;
-      fill: none;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      stroke-dasharray: 50;
-      stroke-dashoffset: 50;
-      animation: drawCheck 0.5s ease 0.3s forwards;
-    }
-    @keyframes drawCheck {
-      to { stroke-dashoffset: 0; }
-    }
-
-    /* Processing overlay */
-    .processing-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(255,255,255,0.9);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 16px;
-      z-index: 100;
-    }
-    .processing-dots {
-      display: flex;
-      gap: 8px;
-    }
-    .processing-dots span {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: #667eea;
-      animation: bounce 1.4s infinite ease-in-out;
-    }
-    .processing-dots span:nth-child(2) { animation-delay: 0.16s; }
-    .processing-dots span:nth-child(3) { animation-delay: 0.32s; }
-    @keyframes bounce {
-      0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-      40% { transform: scale(1); opacity: 1; }
-    }
-
-    /* Back button */
-    .back-btn {
-      background: transparent;
-      border: none;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      color: #6e6e73;
-      font-size: 14px;
-      font-family: inherit;
-      padding: 0;
-      margin-bottom: 20px;
-      transition: color 0.2s ease;
-    }
-    .back-btn:hover { color: #1d1d1f; }
-
-    /* Email chip */
-    .email-chip {
-      display: inline-block;
-      background: #f3f4f6;
-      padding: 6px 14px;
-      border-radius: 20px;
-      font-size: 14px;
-      color: #6e6e73;
-    }
-
-    /* Info box */
-    .info-box {
-      background: #eff6ff;
-      border-radius: 12px;
-      padding: 16px;
-      font-size: 14px;
-      color: #3b82f6;
-      line-height: 1.5;
-      margin: 16px 0;
-    }
-
-    /* User avatar */
-    .user-avatar {
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #667eea, #764ba2);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 28px;
-      color: white;
-      font-weight: 700;
-      margin: 0 auto 16px;
-    }
-
-    /* Brand logo */
-    .brand-logo {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      margin-bottom: 32px;
-    }
-    .brand-logo-icon {
-      width: 40px;
-      height: 40px;
-    }
-    .brand-logo-name {
-      font-size: 22px;
-      font-weight: 700;
-      color: #1d1d1f;
-    }
-    .brand-logo-tagline {
-      font-size: 13px;
-      color: #6e6e73;
-    }
-
-    /* Card dots */
-    .card-dots {
-      display: flex;
-      justify-content: center;
-      gap: 8px;
-      margin-top: 12px;
-    }
-    .card-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #e5e7eb;
-      transition: all 0.3s ease;
-      border: none;
-      padding: 0;
-      cursor: pointer;
-    }
-    .card-dot.active {
-      background: #667eea;
-      width: 24px;
-      border-radius: 4px;
-    }
-
-    /* Spacing & text utilities */
-    .text-center { text-align: center; }
-    .mt-8 { margin-top: 8px; }
-    .mt-12 { margin-top: 12px; }
-    .mt-16 { margin-top: 16px; }
-    .mt-20 { margin-top: 20px; }
-    .mt-24 { margin-top: 24px; }
-    .mt-32 { margin-top: 32px; }
-    .mb-8 { margin-bottom: 8px; }
-    .mb-12 { margin-bottom: 12px; }
-    .mb-16 { margin-bottom: 16px; }
-    .mb-24 { margin-bottom: 24px; }
-
-    .section-heading {
-      font-size: 22px;
-      font-weight: 700;
-      color: #1d1d1f;
-      margin-bottom: 8px;
-    }
-    .section-subtext {
-      font-size: 14px;
-      color: #6e6e73;
-    }
-
-    /* Footer secured-by */
-    .secured-footer {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      margin-top: 32px;
-      font-size: 12px;
-      color: #a1a1a6;
-    }
-    .secured-footer svg {
-      width: 14px;
-      height: 14px;
-      fill: #a1a1a6;
-    }
-
-    /* Link styles */
-    .link-btn {
-      background: none;
-      border: none;
-      color: #667eea;
-      font-size: 14px;
-      cursor: pointer;
-      font-family: inherit;
-      padding: 0;
-      text-decoration: underline;
-      transition: color 0.2s ease;
-    }
-    .link-btn:hover { color: #764ba2; }
-
-    /* Error message */
-    .error-msg {
-      color: #ef4444;
-      font-size: 14px;
-      margin-top: 8px;
-      text-align: center;
-    }
-
-    /* Status area */
-    .status-area {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      margin-top: 16px;
-      font-size: 14px;
-      color: #6e6e73;
-    }
-
-    /* Payment amount */
-    .payment-amount {
-      font-size: 36px;
-      font-weight: 700;
-      color: #1d1d1f;
-      text-align: center;
-      margin: 16px 0;
-    }
-
-    /* Success details */
-    .success-details {
-      background: #f9fafb;
-      border-radius: 12px;
-      padding: 20px;
-      margin: 24px 0;
-    }
-    .success-detail-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 8px 0;
-      font-size: 14px;
-    }
-    .success-detail-row:not(:last-child) {
-      border-bottom: 1px solid #e5e7eb;
-    }
-    .success-detail-label {
-      color: #6e6e73;
-    }
-    .success-detail-value {
-      color: #1d1d1f;
-      font-weight: 600;
-    }
-
-    /* Processing text */
-    .processing-text {
-      font-size: 16px;
-      font-weight: 600;
-      color: #1d1d1f;
-    }
-    .processing-subtext {
-      font-size: 13px;
-      color: #6e6e73;
-    }
-  </style>
+  <link rel="stylesheet" href="css/wallet.css">
 </head>
+
 <body>
 
-  <!-- Step 1: Email Entry -->
-  <div id="step-email" class="step active">
-    <div class="brand-logo">
-      <svg class="brand-logo-icon" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M20 2L6 10v12c0 9 6 16 14 18 8-2 14-9 14-18V10L20 2z" fill="url(#shield-grad)" />
-        <path d="M17 21l3 3 5-6" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-        <defs>
-          <linearGradient id="shield-grad" x1="6" y1="2" x2="34" y2="32" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#667eea" />
-            <stop offset="1" stop-color="#764ba2" />
-          </linearGradient>
-        </defs>
-      </svg>
-      <span class="brand-logo-name">PassWallet</span>
-      <span class="brand-logo-tagline">Fast, secure checkout</span>
+  <!-- 
+    The checkout container is designed to resize dynamically.
+    The SDK listens for height changes and adjusts the iframe in the parent. 
+  -->
+  <div id="checkout-app" class="app-container">
+
+    <!-- View 1: Email Entry -->
+    <div id="view-email" class="view active">
+      <div class="view-header">
+        <div class="brand-row">
+          <svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <span class="brand-name">PassWallet</span>
+        </div>
+      </div>
+      <form id="email-form" class="form-group">
+        <label for="email-input">Email address</label>
+        <div class="input-wrapper">
+          <input type="email" id="email-input" placeholder="you@example.com" required autocomplete="username webauthn"
+            autofocus>
+          <button type="submit" id="continue-email-btn" class="icon-btn" aria-label="Continue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </button>
+        </div>
+      </form>
+      <div class="loading-overlay" id="email-loading" style="display:none;">
+        <div class="spinner"></div>
+      </div>
     </div>
 
-    <h2 class="section-heading text-center">Enter your email to continue</h2>
-
-    <div class="mt-24">
-      <input
-        type="email"
-        id="email-input"
-        class="input-field"
-        placeholder="you@example.com"
-        autocomplete="email"
-      />
+    <!-- View 2: OTP Entry -->
+    <div id="view-otp" class="view">
+      <div class="view-header">
+        <button class="back-btn" id="back-to-email-btn" aria-label="Back">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <span class="view-title">Verify Email</span>
+      </div>
+      <p class="subtitle">Enter the 6-digit code sent to <strong id="display-otp-email"></strong></p>
+      <form id="otp-form" class="form-group">
+        <input type="text" id="otp-input" class="otp-input" placeholder="000000" maxlength="11" required
+          autocomplete="one-time-code">
+        <button type="submit" id="verify-otp-btn" class="btn-primary w-full mt-3">Verify Code</button>
+      </form>
     </div>
 
-    <div class="mt-16">
-      <button id="email-submit-btn" class="btn-primary" disabled>
-        Continue
+    <!-- View 3: Passkey Registration Prompt (Shown after successful OTP if no passkey exists) -->
+    <div id="view-register-passkey" class="view">
+      <div class="passkey-promo">
+        <div class="icon-circle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path
+              d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4">
+            </path>
+          </svg>
+        </div>
+        <h3>Faster checkout next time</h3>
+        <p>Save a passkey to securely check out with Face ID or Touch ID instead of email codes.</p>
+        <div class="actions">
+          <button id="register-passkey-btn" class="btn-primary w-full">Save Passkey</button>
+          <button id="skip-passkey-btn" class="btn-text w-full mt-2">Not now</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- View 4: Payment Selection (Shows saved cards) -->
+    <div id="view-payment" class="view">
+      <div class="view-header">
+        <div class="user-block">
+          <div class="avatar" id="user-avatar">A</div>
+          <span class="user-email" id="display-payment-email">alex@example.com</span>
+        </div>
+        <button class="change-user-btn" id="logout-btn">Change</button>
+      </div>
+
+      <div class="card-list" id="card-list">
+        <!-- populated by JS -->
+      </div>
+
+      <button id="pay-btn" class="btn-primary w-full mt-4">
+        Pay <span id="pay-amount">$0.00</span>
       </button>
     </div>
 
-    <div id="email-loading" class="status-area" style="display: none;">
-      <div class="spinner"></div>
-      <span>Checking account...</span>
-    </div>
-
-    <div id="email-error" class="error-msg" style="display: none;"></div>
-
-    <div class="secured-footer">
-      <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-        <path d="M8 1a4 4 0 0 0-4 4v2H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-1V5a4 4 0 0 0-4-4zm2 6H6V5a2 2 0 1 1 4 0v2z"/>
-      </svg>
-      <span>Secured by PassWallet</span>
-    </div>
-  </div>
-
-  <!-- Step 2: Registration -->
-  <div id="step-register" class="step">
-    <button class="back-btn" data-back="step-email">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M10 12L6 8l4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      Back
-    </button>
-
-    <h2 class="section-heading">Create your account</h2>
-    <div class="mt-8 mb-16">
-      <span class="email-chip" id="register-email-display"></span>
-    </div>
-
-    <div class="mb-16">
-      <input
-        type="text"
-        id="name-input"
-        class="input-field"
-        placeholder="Your name"
-        autocomplete="name"
-      />
-    </div>
-
-    <button id="register-btn" class="btn-primary">
-      <span>&#x1F510;</span>
-      Register with Passkey
-    </button>
-
-    <div class="info-box">
-      Passkeys use your device's biometric (fingerprint, face) for secure, passwordless sign-in. No passwords to remember or steal.
-    </div>
-
-    <div id="register-status" class="status-area" style="display: none;">
-      <div class="spinner"></div>
-      <span>Setting up your passkey...</span>
-    </div>
-  </div>
-
-  <!-- Step 3: Authentication -->
-  <div id="step-auth" class="step">
-    <button class="back-btn" data-back="step-email">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M10 12L6 8l4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      Back
-    </button>
-
-    <div class="text-center">
-      <div id="user-avatar" class="user-avatar"></div>
-      <h2 class="section-heading" id="welcome-name">Welcome back!</h2>
-      <p class="section-subtext mt-4" id="auth-email-display"></p>
-    </div>
-
-    <div class="mt-24">
-      <button id="login-btn" class="btn-primary">
-        <span>&#x1F510;</span>
-        Sign in with Passkey
-      </button>
-    </div>
-
-    <div class="text-center mt-16">
-      <button id="switch-email" class="link-btn">Not you? Use a different email</button>
-    </div>
-
-    <div id="auth-status" class="status-area" style="display: none;">
-      <div class="spinner"></div>
-      <span>Verifying identity...</span>
-    </div>
-  </div>
-
-  <!-- Step 4: Card Selection -->
-  <div id="step-cards" class="step">
-    <h2 class="section-heading text-center">Select payment method</h2>
-    <div id="payment-amount" class="payment-amount">$0.00</div>
-
-    <div id="card-carousel" class="card-carousel">
-      <!-- Cards populated by JS -->
-    </div>
-
-    <div id="card-dots" class="card-dots">
-      <!-- Dots populated by JS -->
-    </div>
-
-    <div class="mt-24">
-      <button id="pay-btn" class="btn-primary" disabled>
-        Pay $0.00
-      </button>
-    </div>
-  </div>
-
-  <!-- Step 5: Success -->
-  <div id="step-success" class="step">
-    <div class="text-center">
-      <div class="checkmark-circle">
-        <svg class="checkmark-svg" viewBox="0 0 40 40">
-          <polyline points="10,22 18,30 30,12" />
-        </svg>
-      </div>
-
-      <h2 class="section-heading">Payment Successful!</h2>
-    </div>
-
-    <div class="success-details">
-      <div class="success-detail-row">
-        <span class="success-detail-label">Transaction ID</span>
-        <span class="success-detail-value" id="success-txn-id"></span>
-      </div>
-      <div class="success-detail-row">
-        <span class="success-detail-label">Amount</span>
-        <span class="success-detail-value" id="success-amount"></span>
-      </div>
-      <div class="success-detail-row">
-        <span class="success-detail-label">Card</span>
-        <span class="success-detail-value" id="success-card"></span>
+    <!-- View 5: Success / Processing -->
+    <div id="view-processing" class="view">
+      <div class="processing-state">
+        <div class="spinner-large"></div>
+        <p id="processing-text">Processing payment...</p>
       </div>
     </div>
 
-    <button id="done-btn" class="btn-primary">
-      Done
-    </button>
-  </div>
-
-  <!-- Processing Overlay (hidden by default) -->
-  <div id="processing-overlay" class="processing-overlay" style="display: none;">
-    <div class="processing-dots">
-      <span></span>
-      <span></span>
-      <span></span>
-    </div>
-    <span class="processing-text">Processing payment...</span>
-    <span class="processing-subtext">Please do not close this window</span>
   </div>
 
   <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
   <script src="checkout.js"></script>
 </body>
+
 </html>
