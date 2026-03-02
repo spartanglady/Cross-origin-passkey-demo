@@ -9,14 +9,18 @@ Two separate web applications running on **different origins** to demonstrate tr
 
 | Component | Local URL | Role |
 |-----------|-----------|------|
-| **TechStore** (Merchant) | `http://localhost:3000` | Apple-inspired e-commerce store |
-| **PassWallet** (Wallet) | `http://localhost:3001` | Passkey-authenticated wallet, embedded via iframe |
+| **Keysmith** (Merchant) | `http://localhost:3000` | Custom mechanical keyboards store |
+| **PassWallet** (Wallet) | `http://localhost:3001` | Passkey-authenticated wallet, embedded via SDK/iframe |
 
 The merchant embeds PassWallet in an iframe with the required permissions policy:
 
-```html
-<iframe src="http://localhost:3001/checkout.html"
-        allow="publickey-credentials-get; publickey-credentials-create">
+```javascript
+// Wallet iframe is dynamically injected via the SDK
+window.PassWallet.mount({
+    container: document.getElementById('passwallet-mount-point'),
+    checkoutData: { amount: 100.00 },
+    onComplete: handleSuccess
+});
 ```
 
 Communication between merchant and wallet uses `window.postMessage` with strict origin validation.
@@ -113,14 +117,16 @@ Set environment variables in Vercel:
 
 ### 2. Deploy the Merchant (TechStore)
 
-Before deploying, update the wallet URL in `merchant/public/index.html`:
+Set the `WALLET_ORIGIN` environment variable in Vercel for the merchant project.
 
-```html
-<script>
-  window.__CONFIG__ = {
-    WALLET_ORIGIN: 'https://your-wallet.vercel.app'  // <-- Set this
-  };
-</script>
+The merchant app explicitly fetches this value via a serverless function (`/api/config`) to dynamically load the wallet SDK:
+
+```javascript
+fetch('/api/config')
+  .then(r => r.json())
+  .then(c => {
+    // Dynamically inject the PassWallet SDK from the configured origin
+  });
 ```
 
 Then deploy:
@@ -142,11 +148,15 @@ vercel --prod
 Cross-origin-passkey-demo/
 ├── package.json                 # Root: runs both servers locally
 ├── merchant/
+│   ├── api/
+│   │   └── config.js            # Vercel serverless config endpoint
 │   ├── server.js                # Express static server (port 3000)
 │   ├── vercel.json              # Vercel static deployment config
 │   └── public/
-│       ├── index.html           # Apple-inspired store UI
-│       └── app.js               # Cart, iframe, postMessage logic
+│       ├── css/
+│       │   └── style.css        # Merchant styling
+│       ├── index.html           # Keysmith store UI
+│       └── app.js               # Cart, UI logic, SDK integration
 ├── wallet/
 │   ├── server.js                # Express + WebAuthn API (port 3001)
 │   ├── store.js                 # In-memory user/credential/card store
@@ -154,8 +164,11 @@ Cross-origin-passkey-demo/
 │   ├── api/
 │   │   └── index.js             # Vercel serverless entry point
 │   └── public/
+│       ├── css/
+│       │   └── wallet.css       # Wallet styling
+│       ├── sdk.js               # PassWallet Embedded SDK
 │       ├── checkout.html        # Multi-step checkout UI
-│       └── checkout.js          # WebAuthn + postMessage client logic
+│       └── checkout.js          # WebAuthn client logic
 ```
 
 ## API Endpoints (Wallet Server)
@@ -163,6 +176,8 @@ Cross-origin-passkey-demo/
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/lookup` | Check if email has an account |
+| POST | `/api/auth/otp/send` | Send simulated OTP to email |
+| POST | `/api/auth/otp/verify` | Verify OTP and authenticate user |
 | POST | `/api/register/options` | Generate WebAuthn registration options |
 | POST | `/api/register/verify` | Verify registration and create account |
 | POST | `/api/login/options` | Generate WebAuthn authentication options |
