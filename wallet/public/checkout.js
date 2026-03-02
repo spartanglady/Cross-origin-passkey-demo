@@ -52,23 +52,31 @@ document.addEventListener('DOMContentLoaded', () => {
   // Notify parent SDK that iframe is ready to receive data
   window.parent.postMessage({ type: 'WALLET_READY' }, '*');
 
+  let lastReportedHeight = 0;
+  function notifyResize() {
+    // Small delay to let animations/DOM settle
+    setTimeout(() => {
+      // Use scrollHeight to capture any overflowing content or margins
+      const height = appContainer.scrollHeight;
+      if (height !== lastReportedHeight) {
+        lastReportedHeight = height;
+        window.parent.postMessage({ type: 'RESIZE_IFRAME', data: { height } }, '*');
+      }
+    }, 50);
+  }
+
+  // Automatically observe DOM changes natively instead of just static triggers
+  const resizeObserver = new ResizeObserver(() => notifyResize());
+  resizeObserver.observe(appContainer);
+
   window.addEventListener('message', (event) => {
     const { type, data } = event.data;
     if (type === 'INIT_CHECKOUT') {
       state.checkoutData = data;
       payAmount.textContent = `$${data.amount}`;
-      // Tell parent height
       notifyResize();
     }
   });
-
-  function notifyResize() {
-    // Small delay to let animations/DOM settle
-    setTimeout(() => {
-      const height = appContainer.offsetHeight;
-      window.parent.postMessage({ type: 'RESIZE_IFRAME', data: { height } }, '*');
-    }, 50);
-  }
 
   // --- Navigation & Transitions ---
   function navigateTo(viewId, direction = 'forward') {
