@@ -213,6 +213,8 @@ button {
   perspective: 2000px;
   transform: rotateX(55deg) rotateZ(35deg) scale(0.9);
   height: 400px;
+  margin: 0 auto;
+  /* Globally center the JS-width dictating block */
   /* Rough container height, JS refines width/height center */
 }
 
@@ -220,13 +222,14 @@ button {
   position: absolute;
   top: 0;
   left: 0;
-  background: linear-gradient(135deg, #f0f0f0, #d9d9d9);
-  border: 1px solid #c0c0c0;
+  /* Dark Onyx colorway for high contrast against the white background */
+  background: linear-gradient(135deg, #333333, #1a1a1a);
+  border: 1px solid #000000;
   border-radius: 4px;
   box-shadow:
-    -2px 4px 6px rgba(0, 0, 0, 0.2),
-    inset 1px 1px 2px rgba(255, 255, 255, 0.8),
-    inset -1px -1px 2px rgba(0, 0, 0, 0.1);
+    -2px 4px 6px rgba(0, 0, 0, 0.4),
+    inset 1px 1px 2px rgba(255, 255, 255, 0.15),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.5);
   /* The magic transition connecting scattered to grid */
   transition: transform 1.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.8s ease-in;
   will-change: transform, opacity;
@@ -240,9 +243,10 @@ button {
   bottom: 10%;
   left: 10%;
   right: 10%;
-  background: #eaeaea;
+  background: #2a2a2a;
+  /* Darker top surface */
   border-radius: 3px;
-  box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: inset 1px 1px 2px rgba(255, 255, 255, 0.05);
 }
 
 /* Catalog */
@@ -779,6 +783,8 @@ button {
     margin-top: 2rem;
     margin-bottom: -100px;
     /* Collapse dead visual space left below the scaled element */
+    margin-left: auto;
+    margin-right: auto;
     transform-origin: top center;
   }
 
@@ -817,8 +823,9 @@ button {
   #hero-keyboard-canvas {
     transform: rotateX(55deg) rotateZ(35deg) scale(0.5);
     height: 200px;
-    margin-left: -5vw;
+    margin-left: auto;
     /* Accommodate the fixed internal JS width scaling off-center */
+    margin-right: auto;
     margin-bottom: -140px;
   }
 }
