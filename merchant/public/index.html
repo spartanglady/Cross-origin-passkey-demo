@@ -6,6 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Keysmith | Custom Mechanical Keyboards</title>
 
+  <link rel="icon" type="image/png" href="favicon.png">
+
   <!-- Premium Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -29,6 +31,7 @@
         }
       }).catch(console.error);
   </script>
+  <script src="js/hero-animation.js" defer></script>
 </head>
 
 <body>
@@ -65,6 +68,9 @@
             onclick="document.getElementById('collection').scrollIntoView({behavior: 'smooth'})">Explore
             Collection</button>
         </div>
+
+        <!-- The canvas container where hero-animation.js generates the 3D flying keys -->
+        <div id="hero-keyboard-canvas"></div>
       </section>
 
       <section id="collection" class="catalog">
