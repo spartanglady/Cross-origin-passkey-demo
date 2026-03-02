@@ -123,11 +123,13 @@ app.post('/api/register/options', async (req, res) => {
       user = store.createUser(email, displayName);
     }
 
-    const existingCredentials = store.getCredentialsByEmail(email);
+    // Dynamically derive RP_ID from the actual host header
+    const currentHost = req.headers.host || RP_ID;
+    const dynamicRpId = currentHost.split(':')[0]; // Remove port if present
 
     const options = await generateRegistrationOptions({
       rpName: RP_NAME,
-      rpID: RP_ID,
+      rpID: dynamicRpId,
       userID: new TextEncoder().encode(user.id),
       userName: email,
       userDisplayName: displayName,
@@ -165,11 +167,18 @@ app.post('/api/register/verify', async (req, res) => {
       return res.status(400).json({ error: 'Challenge not found or expired' });
     }
 
+    const currentHost = req.headers.host || RP_ID;
+    const dynamicRpId = currentHost.split(':')[0];
+    const expectedOriginHeader = req.headers.origin || `https://${currentHost}`;
+
+    // Allow dynamic origins for Vercel preview environments
+    const allowedOrigins = [...ALLOWED_ORIGINS, expectedOriginHeader];
+
     const verification = await verifyRegistrationResponse({
       response,
       expectedChallenge,
-      expectedOrigin: ALLOWED_ORIGINS,
-      expectedRPID: RP_ID,
+      expectedOrigin: allowedOrigins,
+      expectedRPID: dynamicRpId,
     });
 
     if (verification.verified && verification.registrationInfo) {
@@ -205,8 +214,11 @@ app.post('/api/login/options', async (req, res) => {
       userCredentials = store.getCredentialsByEmail(email);
     }
 
+    const currentHost = req.headers.host || RP_ID;
+    const dynamicRpId = currentHost.split(':')[0];
+
     const options = await generateAuthenticationOptions({
-      rpID: RP_ID,
+      rpID: dynamicRpId,
       allowCredentials: userCredentials.map(c => ({
         id: c.id,
         type: 'public-key',
@@ -250,11 +262,18 @@ app.post('/api/login/verify', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    const currentHost = req.headers.host || RP_ID;
+    const dynamicRpId = currentHost.split(':')[0];
+    const expectedOriginHeader = req.headers.origin || `https://${currentHost}`;
+
+    // Allow dynamic origins for Vercel preview environments
+    const allowedOrigins = [...ALLOWED_ORIGINS, expectedOriginHeader];
+
     const verification = await verifyAuthenticationResponse({
       response,
       expectedChallenge,
-      expectedOrigin: ALLOWED_ORIGINS,
-      expectedRPID: RP_ID,
+      expectedOrigin: allowedOrigins,
+      expectedRPID: dynamicRpId,
       credential: {
         id: credential.id,
         publicKey: credential.publicKey,
