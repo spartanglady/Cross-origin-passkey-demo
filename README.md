@@ -7,10 +7,10 @@ A working demo that proves **WebAuthn passkeys work within cross-origin iframes*
 
 Two separate web applications running on **different origins** to demonstrate true cross-origin behavior:
 
-| Component | Local URL | Role |
+| Component | URL (Live Demo) | Role |
 |-----------|-----------|------|
-| **Keysmith** (Merchant) | `http://localhost:3000` | Custom mechanical keyboards store |
-| **PassWallet** (Wallet) | `http://localhost:3001` | Passkey-authenticated wallet, embedded via SDK/iframe |
+| **Keysmith** (Merchant) | `https://guileless-griffin-587ce2.netlify.app/` | Custom mechanical keyboards store |
+| **PassWallet** (Wallet) | `https://cross-origin-passkey-demo.vercel.app/` | Passkey-authenticated wallet, embedded via SDK/iframe |
 
 The merchant embeds PassWallet in an iframe with the required permissions policy:
 
