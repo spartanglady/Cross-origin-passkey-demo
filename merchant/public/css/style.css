@@ -782,10 +782,11 @@ button {
     /* Let JS dictate height, ignore prior 400px fixed */
     margin-top: 2rem;
     margin-bottom: -100px;
-    /* Collapse dead visual space left below the scaled element */
-    margin-left: auto;
-    margin-right: auto;
-    transform-origin: top center;
+    /* Perfect absolute centering workaround for transformed elements */
+    left: 50%;
+    margin-left: -200px;
+    /* Half of the ~600px JS canvas width * 0.65 scale */
+    transform-origin: top left;
   }
 
   .catalog {
@@ -823,9 +824,8 @@ button {
   #hero-keyboard-canvas {
     transform: rotateX(55deg) rotateZ(35deg) scale(0.5);
     height: 200px;
-    margin-left: auto;
-    /* Accommodate the fixed internal JS width scaling off-center */
-    margin-right: auto;
+    margin-left: -150px;
+    /* Half of 600px * 0.5 scale */
     margin-bottom: -140px;
   }
 }
