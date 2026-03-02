@@ -123,6 +123,8 @@ app.post('/api/register/options', async (req, res) => {
       user = store.createUser(email, displayName);
     }
 
+    const existingCredentials = store.getCredentialsByEmail(email);
+
     // Dynamically derive RP_ID from the actual host header
     const currentHost = req.headers.host || RP_ID;
     const dynamicRpId = currentHost.split(':')[0]; // Remove port if present
