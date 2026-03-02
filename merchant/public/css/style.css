@@ -177,28 +177,36 @@ button {
   padding: 12rem 2rem 8rem;
   max-width: 1200px;
   margin: 0 auto;
-  display: flex;
-  flex-direction: row;
-  /* Change to row for side-by-side */
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "text canvas"
+    "button canvas";
   align-items: center;
-  justify-content: space-between;
-  gap: 4rem;
+  row-gap: 2.5rem;
+  column-gap: 4rem;
 }
 
 .hero-content {
-  flex: 1;
+  grid-area: text;
   max-width: 500px;
   z-index: 2;
 }
 
 .hero p {
   font-size: 1.25rem;
-  margin: 1.5rem 0 2.5rem;
+  margin: 1.5rem 0 0;
+}
+
+.hero-btn {
+  grid-area: button;
+  justify-self: start;
 }
 
 /* Flying Keys Canvas */
 #hero-keyboard-canvas {
-  flex: 1;
+  grid-area: canvas;
   position: relative;
   /* Setup an isometric 3D perspective to look down at the keyboard */
   transform-style: preserve-3d;
@@ -732,6 +740,11 @@ button {
      RESPONSIVE MEDIA QUERIES (Mobile Optimization)
      ========================================================== */
 @media (max-width: 768px) {
+  body {
+    overflow-x: hidden;
+    /* Suppress bleeding canvas globally so the page remains a single scroll view */
+  }
+
   h1 {
     font-size: 2.25rem;
   }
@@ -746,13 +759,16 @@ button {
   }
 
   .hero {
+    display: flex;
     flex-direction: column;
     padding: 8rem 1.5rem 4rem;
     gap: 3rem;
     text-align: center;
-    overflow-x: hidden;
-    /* Suppress bleeding canvas */
     width: 100%;
+  }
+
+  .hero-btn {
+    align-self: center;
   }
 
   #hero-keyboard-canvas {
