@@ -744,9 +744,15 @@ button {
      RESPONSIVE MEDIA QUERIES (Mobile Optimization)
      ========================================================== */
 @media (max-width: 768px) {
+
+  html,
   body {
+    max-width: 100vw;
     overflow-x: hidden;
     /* Suppress bleeding canvas globally so the page remains a single scroll view */
+    width: 100%;
+    margin: 0;
+    padding: 0;
   }
 
   h1 {
@@ -779,9 +785,12 @@ button {
     /* Flatten the 3D perspective to be purely horizontal and scale it down */
     transform: scale(0.65);
     height: 15vw;
+    width: 100%;
     /* Allow the div to naturally take up some vertical space */
-    margin: 0 auto;
-    /* Standard center align now that perspective is flat */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0;
     transform-origin: top center;
   }
 
