@@ -727,3 +727,76 @@ button {
   font-weight: 500;
   font-family: 'JetBrains Mono', monospace;
 }
+
+/* ==========================================================
+     RESPONSIVE MEDIA QUERIES (Mobile Optimization)
+     ========================================================== */
+@media (max-width: 768px) {
+  h1 {
+    font-size: 2.25rem;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+  }
+
+  .nav-links {
+    display: none;
+    /* Hide standard links to save space on mobile */
+  }
+
+  .hero {
+    flex-direction: column;
+    padding: 8rem 1.5rem 4rem;
+    gap: 1rem;
+    text-align: center;
+  }
+
+  #hero-keyboard-canvas {
+    /* Scale down the 650px rendered canvas to fit mobile screens */
+    transform: rotateX(55deg) rotateZ(35deg) scale(0.5);
+    height: 250px;
+    margin-top: -2rem;
+    /* Pull up to reduce gap */
+    transform-origin: center;
+  }
+
+  .catalog {
+    padding: 2rem 1.5rem 4rem;
+  }
+
+  .product-grid {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+
+  .checkout-summary-pane {
+    padding: 2rem 1.5rem;
+  }
+
+  .checkout-payment-pane {
+    padding: 2rem 1.5rem;
+  }
+
+  .payment-container {
+    max-width: 100%;
+  }
+
+  .drawer {
+    width: 100vw;
+    right: -100vw;
+  }
+
+  .footer {
+    padding: 2rem 1.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  #hero-keyboard-canvas {
+    transform: rotateX(55deg) rotateZ(35deg) scale(0.4);
+    height: 200px;
+    margin-left: -10vw;
+    /* Accommodate the fixed internal JS width scaling off-center */
+  }
+}
