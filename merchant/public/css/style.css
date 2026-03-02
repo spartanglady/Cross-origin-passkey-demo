@@ -224,16 +224,16 @@ button {
 
 /* Mock product backgrounds */
 .bg-onyx {
-  background: #111;
+  background: url('../images/onyx.png') center/cover no-repeat;
 }
 
 .bg-glacier {
-  background: #ECECF0;
+  background: url('../images/glacier.png') center/cover no-repeat;
   border: 1px solid var(--border-light);
 }
 
 .bg-raw {
-  background: #B3B6B7;
+  background: url('../images/raw.png') center/cover no-repeat;
 }
 
 .card-row {
