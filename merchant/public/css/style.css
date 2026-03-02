@@ -776,17 +776,13 @@ button {
   }
 
   #hero-keyboard-canvas {
-    /* Scale down the 650px rendered canvas to fit mobile screens */
-    transform: rotateX(55deg) rotateZ(35deg) scale(0.65);
-    height: auto;
-    /* Let JS dictate height, ignore prior 400px fixed */
-    margin-top: 2rem;
-    margin-bottom: -100px;
-    /* Perfect absolute centering workaround for transformed elements */
-    left: 50%;
-    margin-left: -200px;
-    /* Half of the ~600px JS canvas width * 0.65 scale */
-    transform-origin: top left;
+    /* Flatten the 3D perspective to be purely horizontal and scale it down */
+    transform: scale(0.65);
+    height: 15vw;
+    /* Allow the div to naturally take up some vertical space */
+    margin: 0 auto;
+    /* Standard center align now that perspective is flat */
+    transform-origin: top center;
   }
 
   .catalog {
@@ -822,10 +818,7 @@ button {
 
 @media (max-width: 480px) {
   #hero-keyboard-canvas {
-    transform: rotateX(55deg) rotateZ(35deg) scale(0.5);
-    height: 200px;
-    margin-left: -150px;
-    /* Half of 600px * 0.5 scale */
-    margin-bottom: -140px;
+    transform: scale(0.5);
+    height: 10vw;
   }
 }
