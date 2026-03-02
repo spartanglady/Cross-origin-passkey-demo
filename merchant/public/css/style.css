@@ -748,17 +748,22 @@ button {
   .hero {
     flex-direction: column;
     padding: 8rem 1.5rem 4rem;
-    gap: 1rem;
+    gap: 3rem;
     text-align: center;
+    overflow-x: hidden;
+    /* Suppress bleeding canvas */
+    width: 100%;
   }
 
   #hero-keyboard-canvas {
     /* Scale down the 650px rendered canvas to fit mobile screens */
-    transform: rotateX(55deg) rotateZ(35deg) scale(0.5);
-    height: 250px;
-    margin-top: -2rem;
-    /* Pull up to reduce gap */
-    transform-origin: center;
+    transform: rotateX(55deg) rotateZ(35deg) scale(0.65);
+    height: auto;
+    /* Let JS dictate height, ignore prior 400px fixed */
+    margin-top: 2rem;
+    margin-bottom: -100px;
+    /* Collapse dead visual space left below the scaled element */
+    transform-origin: top center;
   }
 
   .catalog {
@@ -794,9 +799,10 @@ button {
 
 @media (max-width: 480px) {
   #hero-keyboard-canvas {
-    transform: rotateX(55deg) rotateZ(35deg) scale(0.4);
+    transform: rotateX(55deg) rotateZ(35deg) scale(0.5);
     height: 200px;
-    margin-left: -10vw;
+    margin-left: -5vw;
     /* Accommodate the fixed internal JS width scaling off-center */
+    margin-bottom: -140px;
   }
 }
