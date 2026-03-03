@@ -1,14 +1,17 @@
 /* wallet.css - Premium embedded checkout styles */
 :root {
     --bg-primary: #FFFFFF;
-    --bg-secondary: #F9FAFB;
-    --text-primary: #111827;
-    --text-secondary: #6B7280;
-    --border-color: #E5E7EB;
-    --accent-color: #0F172A;
-    --focus-ring: rgba(15, 23, 42, 0.2);
+    --bg-secondary: #F8FAFC;
+    --text-primary: #0F172A;
+    --text-secondary: #64748B;
+    --border-color: #E2E8F0;
+    --accent-color: #3B82F6;
+    --accent-hover: #2563EB;
+    --focus-ring: rgba(59, 130, 246, 0.3);
     --error: #EF4444;
     --success: #10B981;
+    --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    --premium-gradient: linear-gradient(135deg, #3B82F6 0%, #1E3A8A 100%);
 }
 
 * {
@@ -18,7 +21,7 @@
 }
 
 body {
-    font-family: 'Inter', -apple-system, sans-serif;
+    font-family: 'Outfit', -apple-system, sans-serif;
     color: var(--text-primary);
     background: transparent;
     /* Iframe background */
@@ -79,15 +82,16 @@ body {
 }
 
 .lock-icon {
-    width: 16px;
-    height: 16px;
-    color: var(--success);
+    width: 18px;
+    height: 18px;
+    color: var(--accent-color);
 }
 
 .brand-name {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-secondary);
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
 }
 
 .view-title {
@@ -127,36 +131,53 @@ input {
     font-size: 1rem;
     font-family: inherit;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: 8px;
     outline: none;
     transition: all 0.2s;
     background: var(--bg-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 input:focus {
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px var(--focus-ring);
+    box-shadow: 0 0 0 4px var(--focus-ring);
+}
+
+/* Phone input specific */
+.country-code {
+    position: absolute;
+    left: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 1rem;
+    pointer-events: none;
+}
+
+.phone-input-field {
+    padding-left: 2.5rem;
 }
 
 /* Overlap button on input */
 .icon-btn {
     position: absolute;
     right: 6px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
+    background: var(--accent-color);
+    border: none;
+    border-radius: 6px;
     width: 32px;
     height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    color: var(--text-primary);
+    color: #fff;
     transition: all 0.2s;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
 }
 
 .icon-btn:hover:not(:disabled) {
-    background: var(--border-color);
+    background: var(--accent-hover);
+    transform: translateY(-1px);
 }
 
 .icon-btn:disabled {
@@ -179,19 +200,22 @@ input:focus {
 
 /* Buttons */
 .btn-primary {
-    background: var(--accent-color);
+    background: var(--premium-gradient);
     color: #fff;
     border: none;
-    padding: 0.75rem 1rem;
-    border-radius: 6px;
-    font-size: 0.9375rem;
-    font-weight: 500;
+    padding: 0.875rem 1rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
     cursor: pointer;
-    transition: opacity 0.2s;
+    transition: all 0.2s;
+    box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3);
 }
 
 .btn-primary:hover:not(:disabled) {
-    opacity: 0.9;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(59, 130, 246, 0.4);
 }
 
 .btn-primary:disabled {
@@ -283,9 +307,9 @@ input:focus {
     font-weight: 600;
 }
 
-.user-email {
-    font-size: 0.875rem;
-    font-weight: 500;
+.user-phone {
+    font-size: 0.9375rem;
+    font-weight: 600;
 }
 
 .change-user-btn {
@@ -312,29 +336,31 @@ input:focus {
 .card-item {
     display: flex;
     align-items: center;
-    padding: 1rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
+    padding: 1.25rem;
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s ease-in-out;
     background: var(--bg-primary);
 }
 
 .card-item:hover {
-    border-color: var(--text-secondary);
+    border-color: #CBD5E1;
+    transform: translateY(-1px);
 }
 
 .card-item.selected {
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 1px var(--accent-color);
     background: var(--bg-secondary);
+    box-shadow: var(--focus-ring) 0px 0px 0px 3px;
 }
 
 .card-icon {
-    width: 36px;
-    height: 24px;
-    border-radius: 3px;
-    margin-right: 1rem;
+    width: 44px;
+    height: 30px;
+    border-radius: 4px;
+    margin-right: 1.25rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .card-details {
@@ -344,28 +370,31 @@ input:focus {
 }
 
 .card-brand {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: 1rem;
+    font-weight: 600;
 }
 
 .card-last4 {
-    font-size: 0.75rem;
+    font-size: 0.875rem;
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
+    margin-top: 0.125rem;
 }
 
 .radio-circle {
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     border: 2px solid var(--border-color);
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: all 0.2s;
 }
 
 .card-item.selected .radio-circle {
     border-color: var(--accent-color);
+    background: var(--accent-color);
 }
 
 .card-item.selected .radio-circle::after {
@@ -373,7 +402,49 @@ input:focus {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--accent-color);
+    background: white;
+}
+
+/* CVV Section */
+.cvv-container {
+    margin-top: 1.25rem;
+    padding: 1.25rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    animation: slideDown 0.3s ease-out forwards;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.cvv-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 0.5rem;
+}
+
+.cvv-input-wrapper input {
+    width: 80px;
+    text-align: center;
+    letter-spacing: 2px;
+    font-weight: 600;
+}
+
+.cvv-hint {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    font-weight: 500;
 }
 
 /* Loadings */

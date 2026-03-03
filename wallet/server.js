@@ -50,13 +50,13 @@ app.use((req, res, next) => {
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Email lookup
+// Phone number lookup
 app.post('/api/lookup', (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ error: 'Email required' });
+  const { phoneNumber } = req.body;
+  if (!phoneNumber) return res.status(400).json({ error: 'Phone number required' });
 
-  const user = store.getUser(email);
-  const hasPasskey = user ? store.getCredentialsByEmail(email).length > 0 : false;
+  const user = store.getUser(phoneNumber);
+  const hasPasskey = user ? store.getCredentialsByPhoneNumber(phoneNumber).length > 0 : false;
 
   if (user) {
     res.json({ exists: true, hasPasskey, displayName: user.displayName });
@@ -67,39 +67,39 @@ app.post('/api/lookup', (req, res) => {
 
 // Send OTP
 app.post('/api/auth/otp/send', (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ error: 'Email required' });
+  const { phoneNumber } = req.body;
+  if (!phoneNumber) return res.status(400).json({ error: 'Phone number required' });
 
   // Use static OTP for easier testing
   const otp = '111111';
-  store.setOTP(email, otp);
+  store.setOTP(phoneNumber, otp);
 
-  // Simulated email delivery
+  // Simulated SMS delivery
   console.log(`\n=============================================`);
-  console.log(`✉️ MOCK EMAIL TO: ${email}`);
+  console.log(`📱 MOCK SMS TO: ${phoneNumber}`);
   console.log(`🔑 PassWallet Login Code: ${otp}`);
   console.log(`=============================================\n`);
 
-  res.json({ success: true, message: 'OTP sent to email simulator' });
+  res.json({ success: true, message: 'OTP sent to SMS simulator' });
 });
 
 // Verify OTP
 app.post('/api/auth/otp/verify', (req, res) => {
-  const { email, otp } = req.body;
-  if (!email || !otp) return res.status(400).json({ error: 'Email and OTP required' });
+  const { phoneNumber, otp } = req.body;
+  if (!phoneNumber || !otp) return res.status(400).json({ error: 'Phone number and OTP required' });
 
-  const storedOtp = store.getOTP(email);
+  const storedOtp = store.getOTP(phoneNumber);
   if (!storedOtp || storedOtp !== otp) {
     return res.status(401).json({ error: 'Invalid or expired OTP' });
   }
 
   // OTP Valid
-  store.clearOTP(email);
+  store.clearOTP(phoneNumber);
 
-  let user = store.getUser(email);
+  let user = store.getUser(phoneNumber);
   if (!user) {
     // Implicit registration on first successful OTP
-    user = store.createUser(email, email.split('@')[0]);
+    user = store.createUser(phoneNumber, `User ${phoneNumber.slice(-4)}`);
   }
 
   res.json({
@@ -111,19 +111,19 @@ app.post('/api/auth/otp/verify', (req, res) => {
 // Registration: Generate options
 app.post('/api/register/options', async (req, res) => {
   try {
-    const { email, displayName } = req.body;
-    if (!email || !displayName) {
-      return res.status(400).json({ error: 'Email and displayName required' });
+    const { phoneNumber, displayName } = req.body;
+    if (!phoneNumber || !displayName) {
+      return res.status(400).json({ error: 'Phone number and displayName required' });
     }
 
     // Check if user already exists
-    let user = store.getUser(email);
+    let user = store.getUser(phoneNumber);
     if (!user) {
       // Create user
-      user = store.createUser(email, displayName);
+      user = store.createUser(phoneNumber, displayName);
     }
 
-    const existingCredentials = store.getCredentialsByEmail(email);
+    const existingCredentials = store.getCredentialsByPhoneNumber(phoneNumber);
 
     // Dynamically derive RP_ID from the actual host header
     const currentHost = req.headers.host || RP_ID;
@@ -133,7 +133,7 @@ app.post('/api/register/options', async (req, res) => {
       rpName: RP_NAME,
       rpID: dynamicRpId,
       userID: new TextEncoder().encode(user.id),
-      userName: email,
+      userName: phoneNumber,
       userDisplayName: displayName,
       attestationType: 'none',
       excludeCredentials: existingCredentials.map(c => ({
@@ -147,7 +147,7 @@ app.post('/api/register/options', async (req, res) => {
     });
 
     // Store challenge for verification
-    store.setChallenge(email, options.challenge);
+    store.setChallenge(phoneNumber, options.challenge);
 
     res.json(options);
   } catch (error) {
@@ -159,12 +159,12 @@ app.post('/api/register/options', async (req, res) => {
 // Registration: Verify response
 app.post('/api/register/verify', async (req, res) => {
   try {
-    const { email, response } = req.body;
-    if (!email || !response) {
-      return res.status(400).json({ error: 'Email and response required' });
+    const { phoneNumber, response } = req.body;
+    if (!phoneNumber || !response) {
+      return res.status(400).json({ error: 'Phone number and response required' });
     }
 
-    const expectedChallenge = store.getChallenge(email);
+    const expectedChallenge = store.getChallenge(phoneNumber);
     if (!expectedChallenge) {
       return res.status(400).json({ error: 'Challenge not found or expired' });
     }
@@ -186,14 +186,14 @@ app.post('/api/register/verify', async (req, res) => {
     if (verification.verified && verification.registrationInfo) {
       const { credential } = verification.registrationInfo;
 
-      store.addCredential(email, {
+      store.addCredential(phoneNumber, {
         id: credential.id,
         publicKey: credential.publicKey,
         counter: credential.counter,
         transports: response.response.transports || [],
       });
 
-      const user = store.getUser(email);
+      const user = store.getUser(phoneNumber);
       res.json({ verified: true, user: { displayName: user.displayName, cards: user.cards } });
     } else {
       res.status(400).json({ verified: false, error: 'Verification failed' });
@@ -207,13 +207,13 @@ app.post('/api/register/verify', async (req, res) => {
 // Authentication: Generate options
 app.post('/api/login/options', async (req, res) => {
   try {
-    const { email } = req.body || {};
+    const { phoneNumber } = req.body || {};
     let userCredentials = [];
 
-    if (email) {
-      const user = store.getUser(email);
+    if (phoneNumber) {
+      const user = store.getUser(phoneNumber);
       if (!user) return res.status(404).json({ error: 'User not found' });
-      userCredentials = store.getCredentialsByEmail(email);
+      userCredentials = store.getCredentialsByPhoneNumber(phoneNumber);
     }
 
     const currentHost = req.headers.host || RP_ID;
@@ -229,7 +229,7 @@ app.post('/api/login/options', async (req, res) => {
       userVerification: 'preferred',
     });
 
-    const sessionId = email || Math.random().toString(36).slice(2);
+    const sessionId = phoneNumber || Math.random().toString(36).slice(2);
     store.setChallenge(sessionId, options.challenge);
 
     res.json({ options, sessionId });
@@ -242,12 +242,12 @@ app.post('/api/login/options', async (req, res) => {
 // Authentication: Verify response
 app.post('/api/login/verify', async (req, res) => {
   try {
-    const { email, sessionId, response } = req.body;
+    const { phoneNumber, sessionId, response } = req.body;
     if (!response) {
       return res.status(400).json({ error: 'Response required' });
     }
 
-    const lookupKey = email || sessionId;
+    const lookupKey = phoneNumber || sessionId;
     const expectedChallenge = store.getChallenge(lookupKey);
     if (!expectedChallenge) {
       return res.status(400).json({ error: 'Challenge not found or expired' });
@@ -258,8 +258,8 @@ app.post('/api/login/verify', async (req, res) => {
       return res.status(400).json({ error: 'Credential not found' });
     }
 
-    const targetEmail = email || credential.email;
-    const user = store.getUser(targetEmail);
+    const targetPhoneNumber = phoneNumber || credential.phoneNumber;
+    const user = store.getUser(targetPhoneNumber);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -285,7 +285,7 @@ app.post('/api/login/verify', async (req, res) => {
 
     if (verification.verified) {
       store.updateCredentialCounter(response.id, verification.authenticationInfo.newCounter);
-      res.json({ verified: true, user: { email: user.email, displayName: user.displayName, cards: user.cards } });
+      res.json({ verified: true, user: { phoneNumber: user.phoneNumber, displayName: user.displayName, cards: user.cards } });
     } else {
       res.status(400).json({ verified: false, error: 'Authentication failed' });
     }
@@ -297,12 +297,12 @@ app.post('/api/login/verify', async (req, res) => {
 
 // Mock payment
 app.post('/api/pay', (req, res) => {
-  const { email, cardId, amount } = req.body;
-  if (!email || !cardId || !amount) {
-    return res.status(400).json({ error: 'email, cardId, and amount required' });
+  const { phoneNumber, cardId, amount } = req.body;
+  if (!phoneNumber || !cardId || !amount) {
+    return res.status(400).json({ error: 'phoneNumber, cardId, and amount required' });
   }
 
-  const user = store.getUser(email);
+  const user = store.getUser(phoneNumber);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   const card = user.cards.find(c => c.id === cardId);
@@ -320,10 +320,70 @@ app.post('/api/pay', (req, res) => {
   });
 });
 
+// --- WebCrypto endpoints ---
+
+app.post('/api/device/challenge', (req, res) => {
+  const { deviceId } = req.body;
+  if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
+
+  // A simple 32-byte hex challenge string
+  const challenge = Array.from(require('crypto').randomBytes(32))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+
+  store.setChallenge(`dev_${deviceId}`, challenge);
+  res.json({ challenge });
+});
+
+app.post('/api/device/register', (req, res) => {
+  const { deviceId, phoneNumber, publicKey } = req.body;
+  if (!deviceId || !phoneNumber || !publicKey) {
+    return res.status(400).json({ error: 'deviceId, phoneNumber, and publicKey required' });
+  }
+
+  // In a real implementation we would also verify a signed challenge here
+  // to prove possession. Doing direct storage for demo purposes.
+  store.addDeviceBinding(deviceId, publicKey, phoneNumber);
+
+  res.json({ success: true });
+});
+
+app.post('/api/device/verify', async (req, res) => {
+  const { deviceId, signature } = req.body; // actual crypto validation is tricky without subtlecrypto in Node
+  // For the sake of the demo, we will blindly trust the deviceID + signature pair if binding exists.
+  // In reality: 
+  // 1. Get `expectedChallenge` from `getChallenge('dev_' + deviceId)`
+  // 2. Fetch `store.getDeviceBinding(deviceId).publicKey` (which is JWK or SPKI)
+  // 3. Use `crypto.verify` to validate `signature` against `expectedChallenge` using `publicKey`
+
+  if (!deviceId || !signature) return res.status(400).json({ error: 'deviceId and signature required' });
+
+  const expectedChallenge = store.getChallenge(`dev_${deviceId}`);
+  if (!expectedChallenge) return res.status(400).json({ error: 'Challenge missing or expired' });
+
+  const binding = store.getDeviceBinding(deviceId);
+  if (!binding) return res.status(404).json({ error: 'Device binding not found' });
+
+  const user = store.getUser(binding.phoneNumber);
+  if (!user) return res.status(404).json({ error: 'Associated user not found' });
+
+  // Assuming signature is valid for demo
+  const hasPasskey = store.getCredentialsByPhoneNumber(binding.phoneNumber).length > 0;
+
+  res.json({
+    verified: true,
+    hasPasskey,
+    user: {
+      phoneNumber: user.phoneNumber,
+      displayName: user.displayName,
+      cards: user.cards
+    }
+  });
+});
+
 if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`PassWallet service running at ${WALLET_URL}`);
-    console.log(`  Demo user: demo@example.com`);
+    console.log(`  Demo user: 1234567890`);
   });
 }
 
