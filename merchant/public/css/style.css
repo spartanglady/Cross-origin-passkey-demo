@@ -654,6 +654,62 @@ button {
   margin-bottom: 2rem;
 }
 
+/* Payment Options Selector */
+.payment-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.payment-option {
+  position: relative;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--bg-primary);
+}
+
+.payment-option:hover {
+  border-color: var(--text-secondary);
+}
+
+.payment-option input[type="radio"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-right: 1.25rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.payment-option:has(input[type="radio"]:checked) {
+  border-color: var(--accent);
+  border-width: 2px;
+  padding: calc(1rem - 1px) calc(1.25rem - 1px);
+  background: #fafafa;
+}
+
+.option-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.option-name {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.option-desc {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
 /* SDK Container styling within dedicated view */
 .wallet-container {
   background: #FFFFFF;

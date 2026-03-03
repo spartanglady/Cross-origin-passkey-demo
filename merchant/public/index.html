@@ -191,14 +191,41 @@
         </div>
       </div>
 
-      <!-- Right side: Payment (PassWallet) -->
+      <!-- Right side: Payment Method Selector -->
       <div class="checkout-payment-pane">
         <div class="payment-container">
-          <h2>Express Checkout</h2>
-          <p class="payment-subtitle">Fast, secure checkout via PassWallet.</p>
+          <h2>Payment Method</h2>
+          <p class="payment-subtitle">Select how you want to pay</p>
+
+          <div class="payment-options" id="payment-options-group">
+            <label class="payment-option">
+              <input type="radio" name="payment-method" value="xpay">
+              <div class="option-content">
+                <span class="option-name">XPay</span>
+                <span class="option-desc">Pay with your XPay account</span>
+              </div>
+            </label>
+            <label class="payment-option">
+              <input type="radio" name="payment-method" value="epay">
+              <div class="option-content">
+                <span class="option-name">EPay</span>
+                <span class="option-desc">Secure electronic payment</span>
+              </div>
+            </label>
+            <label class="payment-option">
+              <input type="radio" name="payment-method" value="passwallet" checked>
+              <div class="option-content">
+                <span class="option-name">PassWallet Express</span>
+                <span class="option-desc">Fast checkout powered by Passkeys</span>
+              </div>
+            </label>
+          </div>
 
           <!-- The container where PassWalletSDK will mount the iframe -->
           <div id="passwallet-mount-point" class="wallet-container"></div>
+
+          <button id="generic-place-order-btn" class="btn-primary w-full" style="display: none; margin-top: 1rem;">Place
+            Order</button>
         </div>
       </div>
     </div>

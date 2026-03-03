@@ -159,39 +159,76 @@ document.addEventListener('DOMContentLoaded', () => {
     openDrawer();
   });
 
+  // --- Payment Options Logic ---
+  const paymentRadios = document.querySelectorAll('input[name="payment-method"]');
+  const passwalletMount = document.getElementById('passwallet-mount-point');
+  const genericPlaceOrderBtn = document.getElementById('generic-place-order-btn');
+
+  let currentSubtotal = 0;
+
+  function handlePaymentSelection() {
+    const selectedMethod = document.querySelector('input[name="payment-method"]:checked').value;
+
+    if (selectedMethod === 'passwallet') {
+      passwalletMount.style.display = 'block';
+      genericPlaceOrderBtn.style.display = 'none';
+
+      if (window.PassWallet) {
+        window.PassWallet.mount({
+          container: passwalletMount,
+          checkoutData: {
+            amount: currentSubtotal.toFixed(2),
+            merchantName: 'KEYSMITH.'
+          },
+          onComplete: (data) => {
+            cart = [];
+            updateCartUI();
+            confAmount.textContent = `$${data.amount}`;
+            confCard.textContent = `${data.cardBrand} •••• ${data.last4}`;
+            modal.showModal();
+          },
+          onCancel: () => {
+            showStorefrontPage();
+            openDrawer();
+          }
+        });
+      }
+    } else {
+      // XPay or EPay
+      passwalletMount.style.display = 'none';
+      genericPlaceOrderBtn.style.display = 'block';
+      if (window.PassWallet) {
+        window.PassWallet.unmount();
+      }
+    }
+  }
+
+  paymentRadios.forEach(radio => {
+    radio.addEventListener('change', handlePaymentSelection);
+  });
+
+  genericPlaceOrderBtn.addEventListener('click', () => {
+    const selectedMethod = document.querySelector('input[name="payment-method"]:checked').value;
+    const methodName = selectedMethod === 'xpay' ? 'XPay' : 'EPay';
+
+    // Mock success for generic payments
+    cart = [];
+    updateCartUI();
+    confAmount.textContent = `$${currentSubtotal.toFixed(2)}`;
+    confCard.textContent = `${methodName} Account`;
+    modal.showModal();
+  });
+
   startCheckoutBtn.addEventListener('click', () => {
     if (cart.length === 0) return;
 
     closeDrawer();
     showCheckoutPage();
 
-    const subtotal = cart.reduce((s, item) => s + (item.price * item.qty), 0);
+    currentSubtotal = cart.reduce((s, item) => s + (item.price * item.qty), 0);
 
-    // Initialize PassWallet SDK
-    if (window.PassWallet) {
-      window.PassWallet.mount({
-        container: document.getElementById('passwallet-mount-point'),
-        checkoutData: {
-          amount: subtotal.toFixed(2),
-          merchantName: 'KEYSMITH.'
-        },
-        onComplete: (data) => {
-          // data contains { transactionId, last4, cardBrand, amount }
-          cart = []; // clear cart
-          updateCartUI();
-
-          confAmount.textContent = `$${data.amount}`;
-          confCard.textContent = `${data.cardBrand} •••• ${data.last4}`;
-          modal.showModal();
-        },
-        onCancel: () => {
-          showStorefrontPage();
-          openDrawer();
-        }
-      });
-    } else {
-      console.error('PassWallet SDK not loaded yet.');
-    }
+    // Read the current radio state and mount/unmount accordingly
+    handlePaymentSelection();
   });
 
   // Init
