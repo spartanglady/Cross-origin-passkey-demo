@@ -31,10 +31,10 @@ Communication between merchant and wallet uses `window.postMessage` with strict 
 Merchant Site                          PassWallet (iframe)
     |                                        |
     |  1. User shops, adds to cart           |
-    |  2. Clicks "Pay with PassWallet"       |
+    |  2. Selects "PassWallet" in checkout   |
     |  -------- iframe opens ---------->     |
     |  3. INIT_CHECKOUT (postMessage)  ----> |
-    |                                        |  4. User enters email
+    |                                        |  4. User enters phone (or conditional autofill)
     |                                        |  5a. New user: Register passkey
     |                                        |  5b. Existing user: Sign in with passkey
     |                                        |  6. Select card from carousel
@@ -57,13 +57,14 @@ Then open **http://localhost:3000** in your browser.
 
 ### Demo User
 
-A pre-seeded user is available for quick testing (no passkey registration needed for the email lookup flow):
+A pre-seeded user is available for quick testing (no passkey registration needed for the phone lookup flow):
 
-- **Email:** `demo@example.com`
+- **Phone:** `1234567890`
 - **Name:** Alex Johnson
 - **Cards:** Visa 4242, Mastercard 8888, Amex 1234
 
-> Note: Since this user has no passkey credential registered in your browser, you'll need to register a new account with a fresh email to test the full passkey flow.
+> Note: Since this user has no passkey credential registered in your browser, you'll need to register a new account with a fresh phone number to test the full passkey flow.
+> The app also features **Conditional Passkey Autofill** for returning users, presented on the phone number entry screen.
 
 ## Tech Stack
 
@@ -100,9 +101,9 @@ The [Permissions Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Heade
 | Firefox | Yes | Yes |
 | Safari | No | Yes |
 
-## Deploy to Vercel
+## Deployment
 
-This project is structured for Vercel deployment as two separate projects:
+This project is structured for deployment as two separate projects (Wallet on Vercel, Merchant on Netlify):
 
 ### 1. Deploy the Wallet (PassWallet)
 
@@ -115,11 +116,11 @@ Set environment variables in Vercel:
 - `WALLET_URL` = `https://your-wallet.vercel.app`
 - `MERCHANT_URL` = `https://your-merchant.vercel.app`
 
-### 2. Deploy the Merchant (TechStore)
+### 2. Deploy the Merchant (Keysmith Store)
 
-Set the `WALLET_ORIGIN` environment variable in Vercel for the merchant project.
+The merchant project is configured for deployment on **Netlify**. Set the `WALLET_ORIGIN` environment variable in Netlify.
 
-The merchant app explicitly fetches this value via a serverless function (`/api/config`) to dynamically load the wallet SDK:
+The merchant app explicitly fetches this value via a Netlify Function (`/.netlify/functions/config`) which is proxied through `/api/config` to dynamically load the wallet SDK:
 
 ```javascript
 fetch('/api/config')
@@ -129,11 +130,11 @@ fetch('/api/config')
   });
 ```
 
-Then deploy:
+Then deploy using the Netlify CLI:
 
 ```bash
 cd merchant
-vercel --prod
+netlify deploy --prod
 ```
 
 ### Key Deployment Notes
@@ -148,10 +149,11 @@ vercel --prod
 Cross-origin-passkey-demo/
 ├── package.json                 # Root: runs both servers locally
 ├── merchant/
-│   ├── api/
-│   │   └── config.js            # Vercel serverless config endpoint
+│   ├── netlify/
+│   │   └── functions/
+│   │       └── config.js        # Netlify serverless config endpoint
 │   ├── server.js                # Express static server (port 3000)
-│   ├── vercel.json              # Vercel static deployment config
+│   ├── netlify.toml             # Netlify static deployment config
 │   └── public/
 │       ├── css/
 │       │   └── style.css        # Merchant styling
@@ -175,8 +177,8 @@ Cross-origin-passkey-demo/
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/lookup` | Check if email has an account |
-| POST | `/api/auth/otp/send` | Send simulated OTP to email |
+| POST | `/api/lookup` | Check if phone number has an account |
+| POST | `/api/auth/otp/send` | Send simulated OTP to phone number |
 | POST | `/api/auth/otp/verify` | Verify OTP and authenticate user |
 | POST | `/api/register/options` | Generate WebAuthn registration options |
 | POST | `/api/register/verify` | Verify registration and create account |
