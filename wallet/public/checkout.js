@@ -401,21 +401,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   logoutBtn.addEventListener('click', () => {
-    state.phoneNumber = '';
-    state.user = null;
-    phoneInput.value = '';
-    state.cvvValue = '';
-
     // Clear device bindings on explicit logout
     localStorage.removeItem('pw_device_id');
     localStorage.removeItem('pw_mock_key');
+
     if (window.indexedDB) {
       import('https://unpkg.com/idb-keyval@6.0.3/dist/index.js?module')
         .then(({ del }) => del('device_key'))
-        .catch(console.warn);
+        .catch(console.warn)
+        .finally(() => window.location.reload());
+    } else {
+      window.location.reload();
     }
-
-    navigateTo('view-phone', 'backward');
   });
 
   // --- 4. Payment Processing (Pay btn) ---
