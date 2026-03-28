@@ -1,6 +1,7 @@
 // app.js - Keysmith Merchant Logic
 document.addEventListener('DOMContentLoaded', () => {
   let cart = [];
+  let checkoutInstance = null;
 
   // DOM Elements
   const cartToggleBtn = document.getElementById('cart-toggle');
@@ -154,32 +155,41 @@ document.addEventListener('DOMContentLoaded', () => {
   cartOverlay.addEventListener('click', closeDrawer);
 
   backToStoreBtn.addEventListener('click', () => {
-    if (window.PassWallet) window.PassWallet.unmount();
+    destroyCheckout();
     showStorefrontPage();
     openDrawer();
   });
 
   // --- Payment Options Logic ---
   const paymentRadios = document.querySelectorAll('input[name="payment-method"]');
-  const passwalletMount = document.getElementById('passwallet-mount-point');
+  const passwalletCheckout = document.getElementById('passwallet-checkout');
   const genericPlaceOrderBtn = document.getElementById('generic-place-order-btn');
 
   let currentSubtotal = 0;
+
+  function destroyCheckout() {
+    if (checkoutInstance) {
+      checkoutInstance.destroy();
+      checkoutInstance = null;
+    }
+    if (passwalletCheckout) {
+      passwalletCheckout.style.display = 'none';
+    }
+  }
 
   function handlePaymentSelection() {
     const selectedMethod = document.querySelector('input[name="payment-method"]:checked').value;
 
     if (selectedMethod === 'passwallet') {
-      passwalletMount.style.display = 'block';
       genericPlaceOrderBtn.style.display = 'none';
 
+      // Destroy previous instance if switching back
+      destroyCheckout();
+
       if (window.PassWallet) {
-        window.PassWallet.mount({
-          container: passwalletMount,
-          checkoutData: {
-            amount: currentSubtotal.toFixed(2),
-            merchantName: 'KEYSMITH.'
-          },
+        checkoutInstance = new PassWalletCheckout({
+          amount: currentSubtotal.toFixed(2),
+          merchantName: 'KEYSMITH.',
           onComplete: (data) => {
             cart = [];
             updateCartUI();
@@ -195,11 +205,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } else {
       // XPay or EPay
-      passwalletMount.style.display = 'none';
+      destroyCheckout();
       genericPlaceOrderBtn.style.display = 'block';
-      if (window.PassWallet) {
-        window.PassWallet.unmount();
-      }
     }
   }
 

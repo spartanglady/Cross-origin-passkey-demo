@@ -221,8 +221,106 @@
             </label>
           </div>
 
-          <!-- The container where PassWalletSDK will mount the iframe -->
-          <div id="passwallet-mount-point" class="wallet-container"></div>
+          <!-- PassWallet Merchant-Driven Checkout -->
+          <div id="passwallet-checkout" class="pw-checkout" style="display: none;">
+
+            <!-- Step 1: Phone Number Entry -->
+            <div id="pw-step-phone" class="pw-step">
+              <div class="pw-header">
+                <div class="pw-brand-row">
+                  <svg class="pw-lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                  </svg>
+                  <span class="pw-brand-name">PassWallet</span>
+                </div>
+              </div>
+              <form id="pw-phone-form" class="pw-form-group">
+                <label for="pw-phone-input">Phone number</label>
+                <div class="pw-input-wrapper">
+                  <span class="pw-country-code">+1</span>
+                  <input type="tel" id="pw-phone-input" class="pw-phone-field" placeholder="(555) 555-5555" maxlength="14" required autofocus>
+                  <button type="submit" id="pw-phone-btn" class="pw-icon-btn" aria-label="Continue">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                      <polyline points="12 5 19 12 12 19"></polyline>
+                    </svg>
+                  </button>
+                </div>
+              </form>
+              <div id="pw-phone-iframe-slot" style="margin-top: 1rem;"></div>
+              <div class="pw-loading-overlay" id="pw-phone-loading" style="display:none;">
+                <div class="pw-spinner"></div>
+              </div>
+            </div>
+
+            <!-- Step 2: OTP Verification -->
+            <div id="pw-step-otp" class="pw-step">
+              <div class="pw-header">
+                <button class="pw-back-btn" id="pw-back-to-phone" aria-label="Back">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                  </svg>
+                </button>
+                <span class="pw-view-title">Verify Phone</span>
+              </div>
+              <p class="pw-subtitle">Enter the 6-digit code sent to <strong id="pw-display-otp-phone"></strong></p>
+              <form id="pw-otp-form" class="pw-form-group">
+                <input type="text" id="pw-otp-input" class="pw-otp-input" placeholder="000000" maxlength="6" required autocomplete="one-time-code">
+                <div id="pw-otp-error" class="pw-error" style="display:none;"></div>
+                <button type="submit" id="pw-verify-otp-btn" class="pw-btn-primary pw-w-full pw-mt-3">Verify Code</button>
+              </form>
+            </div>
+
+            <!-- Step 3: Register Passkey Prompt -->
+            <div id="pw-step-register-passkey" class="pw-step">
+              <div class="pw-passkey-promo">
+                <div class="pw-icon-circle">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+                  </svg>
+                </div>
+                <h3>Faster checkout next time</h3>
+                <p>Save a passkey to securely check out with Face ID or Touch ID instead of codes.</p>
+                <div id="pw-register-loading" style="display:none; text-align:center; padding: 0.75rem 0;">
+                  <div class="pw-spinner" style="margin: 0 auto;"></div>
+                  <p style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Preparing secure setup...</p>
+                </div>
+                <div id="pw-register-iframe-slot"></div>
+                <div class="pw-actions">
+                  <button id="pw-register-passkey-btn" class="pw-btn-primary pw-w-full" style="display:none;">Save Passkey</button>
+                  <button id="pw-skip-passkey-btn" class="pw-btn-text pw-w-full pw-mt-2">Not now</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 4: Payment / Card Selection -->
+            <div id="pw-step-payment" class="pw-step">
+              <div class="pw-header">
+                <div class="pw-user-block">
+                  <div class="pw-avatar" id="pw-user-avatar">A</div>
+                  <span class="pw-user-phone" id="pw-display-phone">1234567890</span>
+                </div>
+                <button class="pw-change-btn" id="pw-logout-btn">Change</button>
+              </div>
+              <div class="pw-card-list" id="pw-card-list">
+                <!-- populated by JS -->
+              </div>
+              <div id="pw-auth-iframe-slot"></div>
+              <button id="pw-pay-btn" class="pw-btn-primary pw-w-full pw-mt-4" disabled>
+                Pay <span id="pw-pay-amount">$0.00</span>
+              </button>
+            </div>
+
+            <!-- Step 5: Processing -->
+            <div id="pw-step-processing" class="pw-step">
+              <div class="pw-processing-state">
+                <div class="pw-spinner pw-spinner-large"></div>
+                <p id="pw-processing-text">Processing payment...</p>
+              </div>
+            </div>
+
+          </div>
 
           <button id="generic-place-order-btn" class="btn-primary w-full" style="display: none; margin-top: 1rem;">Place
             Order</button>
@@ -259,6 +357,7 @@
     </div>
   </dialog>
 
+  <script src="checkout-flow.js"></script>
   <script src="app.js"></script>
 </body>
 

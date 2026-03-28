@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PassWallet Bridge</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 4px;
+    }
+    #bridge-btn {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 12px 20px;
+      background: linear-gradient(135deg, #3B82F6 0%, #1E3A8A 100%);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.15s, opacity 0.15s;
+    }
+    #bridge-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      opacity: 0.92;
+    }
+    #bridge-btn:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+    #bridge-btn svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+  <button id="bridge-btn" disabled>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+    </svg>
+    <span id="bridge-label">Verify with PassWallet</span>
+  </button>
+
+  <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+  <script src="passkey-bridge.js"></script>
+</body>
+</html>
