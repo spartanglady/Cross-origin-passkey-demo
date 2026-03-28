@@ -7,7 +7,10 @@
 (function () {
   if (window.PassWallet) return;
 
-  const WALLET_ORIGIN = window.__CONFIG__?.WALLET_ORIGIN || 'http://localhost:3001';
+  const WALLET_ORIGIN = window.__CONFIG__?.WALLET_ORIGIN
+    || (location.hostname === 'localhost' || location.hostname.endsWith('.localhost')
+        ? 'http://wallet.localhost:3001'
+        : '');
 
   class PassWalletSDK {
     constructor() {

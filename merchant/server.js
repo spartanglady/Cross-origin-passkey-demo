@@ -11,7 +11,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/api/config', (req, res) => {
-  res.json({ WALLET_ORIGIN: process.env.WALLET_URL || 'http://wallet.localhost:3001' });
+  res.json({ WALLET_ORIGIN: process.env.WALLET_ORIGIN || process.env.WALLET_URL || 'http://wallet.localhost:3001' });
 });
 
 app.listen(PORT, () => {

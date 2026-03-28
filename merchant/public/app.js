@@ -26,9 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const startCheckoutBtn = document.getElementById('start-checkout-btn');
   const backToStoreBtn = document.getElementById('back-to-store-btn');
 
-  const modal = document.getElementById('success-modal');
-  const confAmount = document.getElementById('conf-amount');
-  const confCard = document.getElementById('conf-card');
+  // (modal removed — success is shown inline in the checkout flow)
 
   // --- Drawer State ---
   function openDrawer() {
@@ -160,11 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
     openDrawer();
   });
 
-  // --- Payment Options Logic ---
-  const paymentRadios = document.querySelectorAll('input[name="payment-method"]');
-  const passwalletCheckout = document.getElementById('passwallet-checkout');
-  const genericPlaceOrderBtn = document.getElementById('generic-place-order-btn');
-
+  // --- Checkout Logic ---
   let currentSubtotal = 0;
 
   function destroyCheckout() {
@@ -172,59 +166,27 @@ document.addEventListener('DOMContentLoaded', () => {
       checkoutInstance.destroy();
       checkoutInstance = null;
     }
-    if (passwalletCheckout) {
-      passwalletCheckout.style.display = 'none';
-    }
   }
 
-  function handlePaymentSelection() {
-    const selectedMethod = document.querySelector('input[name="payment-method"]:checked').value;
+  function initCheckout() {
+    destroyCheckout();
 
-    if (selectedMethod === 'passwallet') {
-      genericPlaceOrderBtn.style.display = 'none';
-
-      // Destroy previous instance if switching back
-      destroyCheckout();
-
-      if (window.PassWallet) {
-        checkoutInstance = new PassWalletCheckout({
-          amount: currentSubtotal.toFixed(2),
-          merchantName: 'KEYSMITH.',
-          onComplete: (data) => {
-            cart = [];
-            updateCartUI();
-            confAmount.textContent = `$${data.amount}`;
-            confCard.textContent = `${data.cardBrand} •••• ${data.last4}`;
-            modal.showModal();
-          },
-          onCancel: () => {
-            showStorefrontPage();
-            openDrawer();
-          }
-        });
-      }
-    } else {
-      // XPay or EPay
-      destroyCheckout();
-      genericPlaceOrderBtn.style.display = 'block';
+    if (window.PassWallet) {
+      checkoutInstance = new PassWalletCheckout({
+        amount: currentSubtotal.toFixed(2),
+        merchantName: 'KEYSMITH.',
+        onComplete: (data) => {
+          cart = [];
+          updateCartUI();
+          showStorefrontPage();
+        },
+        onCancel: () => {
+          showStorefrontPage();
+          openDrawer();
+        }
+      });
     }
   }
-
-  paymentRadios.forEach(radio => {
-    radio.addEventListener('change', handlePaymentSelection);
-  });
-
-  genericPlaceOrderBtn.addEventListener('click', () => {
-    const selectedMethod = document.querySelector('input[name="payment-method"]:checked').value;
-    const methodName = selectedMethod === 'xpay' ? 'XPay' : 'EPay';
-
-    // Mock success for generic payments
-    cart = [];
-    updateCartUI();
-    confAmount.textContent = `$${currentSubtotal.toFixed(2)}`;
-    confCard.textContent = `${methodName} Account`;
-    modal.showModal();
-  });
 
   startCheckoutBtn.addEventListener('click', () => {
     if (cart.length === 0) return;
@@ -234,8 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     currentSubtotal = cart.reduce((s, item) => s + (item.price * item.qty), 0);
 
-    // Read the current radio state and mount/unmount accordingly
-    handlePaymentSelection();
+    initCheckout();
   });
 
   // Init

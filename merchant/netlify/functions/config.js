@@ -7,7 +7,7 @@ exports.handler = async (event, context) => {
             "Access-Control-Allow-Origin": "*", // Allow cross-domain fetch from merchant code if needed
         },
         body: JSON.stringify({
-            WALLET_ORIGIN: process.env.WALLET_ORIGIN || '',
+            WALLET_ORIGIN: process.env.WALLET_ORIGIN || process.env.WALLET_URL || '',
         }),
     };
 };

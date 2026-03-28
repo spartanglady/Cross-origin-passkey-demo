@@ -30,6 +30,7 @@ class PassWalletCheckout {
       'pw-step-register-passkey': document.getElementById('pw-step-register-passkey'),
       'pw-step-payment': document.getElementById('pw-step-payment'),
       'pw-step-processing': document.getElementById('pw-step-processing'),
+      'pw-step-success': document.getElementById('pw-step-success'),
     };
 
     this._bindEvents();
@@ -68,8 +69,7 @@ class PassWalletCheckout {
     const payAmountEl = document.getElementById('pw-pay-amount');
     if (payAmountEl) payAmountEl.textContent = `$${this.amount}`;
 
-    // Show the checkout container
-    this.container.style.display = 'block';
+    // Navigate to phone step (container is always visible in the layout)
     this.navigateTo('pw-step-phone');
 
     // Attempt WebCrypto auto-login
@@ -150,6 +150,14 @@ class PassWalletCheckout {
     // Logout / change user
     document.getElementById('pw-logout-btn').addEventListener('click', () => {
       this._handleLogout();
+    });
+
+    // Continue Shopping (from success step)
+    document.getElementById('pw-continue-shopping-btn').addEventListener('click', () => {
+      if (this.onComplete && this._paymentData) {
+        this.onComplete(this._paymentData);
+      }
+      this.destroy();
     });
   }
 
@@ -287,10 +295,12 @@ class PassWalletCheckout {
   // =========================================================
 
   async _handleOTPSubmit() {
+    if (this._otpSubmitting) return;
     const otpInput = document.getElementById('pw-otp-input');
     const otp = otpInput.value.replace(/\D/g, '');
     if (otp.length !== 6) return;
 
+    this._otpSubmitting = true;
     const btn = document.getElementById('pw-verify-otp-btn');
     const errEl = document.getElementById('pw-otp-error');
     errEl.style.display = 'none';
@@ -311,9 +321,10 @@ class PassWalletCheckout {
         this.navigateTo('pw-step-payment');
       }
     } catch (err) {
-      errEl.textContent = 'Invalid code. Check server console for mock SMS.';
+      errEl.textContent = err.message || 'Verification failed. Please try again.';
       errEl.style.display = 'block';
     } finally {
+      this._otpSubmitting = false;
       btn.disabled = false;
       btn.textContent = 'Verify Code';
     }
@@ -573,15 +584,13 @@ class PassWalletCheckout {
       const data = await sdk.pay(this.phoneNumber, this.selectedCardId, this.amount);
 
       if (data.success) {
-        processingText.textContent = 'Success!';
-        if (spinner) spinner.style.borderTopColor = '#10B981';
+        // Populate inline success step
+        this._paymentData = data;
+        document.getElementById('pw-conf-amount').textContent = `$${data.amount}`;
+        document.getElementById('pw-conf-card').textContent = `${data.cardBrand} \u2022\u2022\u2022\u2022 ${data.last4}`;
+        document.getElementById('pw-conf-txn').textContent = data.transactionId;
 
-        setTimeout(() => {
-          if (this.onComplete) {
-            this.onComplete(data);
-          }
-          this.destroy();
-        }, 1000);
+        this.navigateTo('pw-step-success');
       } else {
         throw new Error(data.error || 'Payment failed');
       }
@@ -788,8 +797,11 @@ class PassWalletCheckout {
       window.PassWallet.hidePasskeyButton();
       window.PassWallet.destroy();
     }
+    // Reset all step visibility (container stays in the DOM)
     if (this.container) {
-      this.container.style.display = 'none';
+      Object.values(this.steps).forEach(step => {
+        if (step) step.classList.remove('pw-active');
+      });
     }
   }
 }

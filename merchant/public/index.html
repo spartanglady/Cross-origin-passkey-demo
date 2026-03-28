@@ -18,18 +18,32 @@
   <link rel="stylesheet" href="css/style.css">
 
   <!-- Load Configuration & PassWallet SDK -->
+  <!-- For static CDN deployments (no /api/config), add:
+       <meta name="wallet-origin" content="https://your-wallet-server.vercel.app"> -->
   <script>
     window.__CONFIG__ = { WALLET_ORIGIN: '' };
+
+    function _loadPassWalletSDK(origin) {
+      if (!origin) return;
+      window.__CONFIG__.WALLET_ORIGIN = origin;
+      const s = document.createElement('script');
+      s.src = origin + '/sdk.js';
+      s.onerror = () => console.error('[Keysmith] Failed to load PassWallet SDK from', origin);
+      document.head.appendChild(s);
+    }
+
     fetch('/api/config')
-      .then(r => r.json())
-      .then(c => {
-        if (c.WALLET_ORIGIN) {
-          window.__CONFIG__.WALLET_ORIGIN = c.WALLET_ORIGIN;
-          const script = document.createElement('script');
-          script.src = `${c.WALLET_ORIGIN}/sdk.js`;
-          document.head.appendChild(script);
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(c => _loadPassWalletSDK(c.WALLET_ORIGIN))
+      .catch(() => {
+        // Fallback: read wallet origin from <meta> tag (for static CDN deploys)
+        const meta = document.querySelector('meta[name="wallet-origin"]');
+        if (meta && meta.content) {
+          _loadPassWalletSDK(meta.content);
+        } else {
+          console.error('[Keysmith] No wallet config found. Set WALLET_ORIGIN env var or add <meta name="wallet-origin"> tag.');
         }
-      }).catch(console.error);
+      });
   </script>
   <script src="js/hero-animation.js" defer></script>
 </head>
@@ -194,47 +208,14 @@
       <!-- Right side: Payment Method Selector -->
       <div class="checkout-payment-pane">
         <div class="payment-container">
-          <h2>Payment Method</h2>
-          <p class="payment-subtitle">Select how you want to pay</p>
-
-          <div class="payment-options" id="payment-options-group">
-            <label class="payment-option">
-              <input type="radio" name="payment-method" value="xpay">
-              <div class="option-content">
-                <span class="option-name">XPay</span>
-                <span class="option-desc">Pay with your XPay account</span>
-              </div>
-            </label>
-            <label class="payment-option">
-              <input type="radio" name="payment-method" value="epay">
-              <div class="option-content">
-                <span class="option-name">EPay</span>
-                <span class="option-desc">Secure electronic payment</span>
-              </div>
-            </label>
-            <label class="payment-option">
-              <input type="radio" name="payment-method" value="passwallet" checked>
-              <div class="option-content">
-                <span class="option-name">PassWallet Express</span>
-                <span class="option-desc">Fast checkout powered by Passkeys</span>
-              </div>
-            </label>
-          </div>
+          <h2>Checkout</h2>
+          <p class="payment-subtitle">Enter your details to complete your purchase.</p>
 
           <!-- PassWallet Merchant-Driven Checkout -->
-          <div id="passwallet-checkout" class="pw-checkout" style="display: none;">
+          <div id="passwallet-checkout" class="checkout-flow">
 
             <!-- Step 1: Phone Number Entry -->
             <div id="pw-step-phone" class="pw-step">
-              <div class="pw-header">
-                <div class="pw-brand-row">
-                  <svg class="pw-lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                  </svg>
-                  <span class="pw-brand-name">PassWallet</span>
-                </div>
-              </div>
               <form id="pw-phone-form" class="pw-form-group">
                 <label for="pw-phone-input">Phone number</label>
                 <div class="pw-input-wrapper">
@@ -247,6 +228,7 @@
                     </svg>
                   </button>
                 </div>
+                <p class="pw-field-hint">We'll look up your saved payment info</p>
               </form>
               <div id="pw-phone-iframe-slot" style="margin-top: 1rem;"></div>
               <div class="pw-loading-overlay" id="pw-phone-loading" style="display:none;">
@@ -256,7 +238,7 @@
 
             <!-- Step 2: OTP Verification -->
             <div id="pw-step-otp" class="pw-step">
-              <div class="pw-header">
+              <div class="pw-step-header">
                 <button class="pw-back-btn" id="pw-back-to-phone" aria-label="Back">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="15 18 9 12 15 6"></polyline>
@@ -268,7 +250,7 @@
               <form id="pw-otp-form" class="pw-form-group">
                 <input type="text" id="pw-otp-input" class="pw-otp-input" placeholder="000000" maxlength="6" required autocomplete="one-time-code">
                 <div id="pw-otp-error" class="pw-error" style="display:none;"></div>
-                <button type="submit" id="pw-verify-otp-btn" class="pw-btn-primary pw-w-full pw-mt-3">Verify Code</button>
+                <button type="submit" id="pw-verify-otp-btn" class="checkout-btn pw-w-full pw-mt-3">Verify Code</button>
               </form>
             </div>
 
@@ -280,15 +262,15 @@
                     <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
                   </svg>
                 </div>
-                <h3>Faster checkout next time</h3>
-                <p>Save a passkey to securely check out with Face ID or Touch ID instead of codes.</p>
+                <h3>Speed up future checkouts</h3>
+                <p>Save a passkey to pay with Face ID or Touch ID next time.</p>
                 <div id="pw-register-loading" style="display:none; text-align:center; padding: 0.75rem 0;">
                   <div class="pw-spinner" style="margin: 0 auto;"></div>
                   <p style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Preparing secure setup...</p>
                 </div>
                 <div id="pw-register-iframe-slot"></div>
                 <div class="pw-actions">
-                  <button id="pw-register-passkey-btn" class="pw-btn-primary pw-w-full" style="display:none;">Save Passkey</button>
+                  <button id="pw-register-passkey-btn" class="checkout-btn pw-w-full" style="display:none;">Save Passkey</button>
                   <button id="pw-skip-passkey-btn" class="pw-btn-text pw-w-full pw-mt-2">Not now</button>
                 </div>
               </div>
@@ -296,18 +278,19 @@
 
             <!-- Step 4: Payment / Card Selection -->
             <div id="pw-step-payment" class="pw-step">
-              <div class="pw-header">
+              <div class="pw-user-row">
                 <div class="pw-user-block">
                   <div class="pw-avatar" id="pw-user-avatar">A</div>
                   <span class="pw-user-phone" id="pw-display-phone">1234567890</span>
                 </div>
                 <button class="pw-change-btn" id="pw-logout-btn">Change</button>
               </div>
+              <div class="pw-section-divider"></div>
               <div class="pw-card-list" id="pw-card-list">
                 <!-- populated by JS -->
               </div>
               <div id="pw-auth-iframe-slot"></div>
-              <button id="pw-pay-btn" class="pw-btn-primary pw-w-full pw-mt-4" disabled>
+              <button id="pw-pay-btn" class="checkout-btn pw-w-full pw-mt-4" disabled>
                 Pay <span id="pw-pay-amount">$0.00</span>
               </button>
             </div>
@@ -320,42 +303,60 @@
               </div>
             </div>
 
+            <!-- Step 6: Success -->
+            <div id="pw-step-success" class="pw-step">
+              <div class="pw-success-state">
+                <div class="pw-success-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                  </svg>
+                </div>
+                <h3>Order Confirmed</h3>
+                <p class="pw-success-subtitle">Your payment was successful. We'll start building your board.</p>
+
+                <div class="pw-receipt">
+                  <div class="pw-receipt-row">
+                    <span>Amount</span>
+                    <span id="pw-conf-amount">$0.00</span>
+                  </div>
+                  <div class="pw-receipt-row">
+                    <span>Card</span>
+                    <span id="pw-conf-card">&bull;&bull;&bull;&bull; 1234</span>
+                  </div>
+                  <div class="pw-receipt-row">
+                    <span>Transaction</span>
+                    <span id="pw-conf-txn">&mdash;</span>
+                  </div>
+                </div>
+
+                <div class="pw-shipping-section">
+                  <h4>Shipping to</h4>
+                  <p class="pw-shipping-address">
+                    John Smith<br>
+                    123 Main Street<br>
+                    San Francisco, CA 94105
+                  </p>
+                  <p class="pw-shipping-eta">Estimated delivery: 5&ndash;7 business days</p>
+                </div>
+
+                <button id="pw-continue-shopping-btn" class="checkout-btn pw-w-full pw-mt-4">Continue Shopping</button>
+              </div>
+            </div>
+
           </div>
 
-          <button id="generic-place-order-btn" class="btn-primary w-full" style="display: none; margin-top: 1rem;">Place
-            Order</button>
+          <div class="checkout-secured-badge">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <span>Secured by PassWallet</span>
+          </div>
         </div>
       </div>
     </div>
   </div>
-
-  <!-- Success Modal -->
-  <dialog id="success-modal" class="modal">
-    <div class="modal-content">
-      <div class="success-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-          <polyline points="22 4 12 14.01 9 11.01"></polyline>
-        </svg>
-      </div>
-      <h2>Order Confirmed</h2>
-      <p>Your payment was successful. We'll start building your board soon.</p>
-      <div class="receipt">
-        <div class="receipt-row">
-          <span>Amount paid</span>
-          <span id="conf-amount">$0.00</span>
-        </div>
-        <div class="receipt-row">
-          <span>Payment method</span>
-          <span id="conf-card">•••• 1234</span>
-        </div>
-      </div>
-      <form method="dialog">
-        <button class="btn-primary w-full mt-4" onclick="window.location.reload()">Continue Shopping</button>
-      </form>
-    </div>
-  </dialog>
 
   <script src="checkout-flow.js"></script>
   <script src="app.js"></script>
