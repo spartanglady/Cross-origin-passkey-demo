@@ -20,6 +20,8 @@ const MERCHANT_URL = process.env.MERCHANT_URL || 'http://store.localhost:3000';
 const RP_ID = new URL(WALLET_URL).hostname;
 
 const RP_NAME = 'PassWallet';
+
+// Build known origins list (for WebAuthn verification)
 const ALLOWED_ORIGINS = [
   WALLET_URL,
   `http://localhost:${PORT}`,
@@ -36,8 +38,11 @@ const ALLOWED_MERCHANT_ORIGINS = [
 
 // Middleware
 app.use(express.json());
+// CORS: dynamically reflect the requesting origin so deployed merchant
+// frontends (Netlify, Vercel previews, custom domains) work without
+// needing to enumerate every possible origin in an allowlist.
 app.use(cors({
-  origin: [...ALLOWED_ORIGINS, ...ALLOWED_MERCHANT_ORIGINS],
+  origin: true,
   credentials: true,
 }));
 
