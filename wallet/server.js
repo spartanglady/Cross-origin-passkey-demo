@@ -16,7 +16,6 @@ const PORT = 3001;
 // For Vercel: use WALLET_URL env var to determine RP_ID, or fall back to .localhost tests
 const VERCEL_WALLET_URL = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '';
 const WALLET_URL = process.env.WALLET_URL || VERCEL_WALLET_URL || `http://wallet.localhost:${PORT}`;
-const MERCHANT_URL = process.env.MERCHANT_URL || 'http://store.localhost:3000';
 
 // Extract hostname for WebAuthn RP ID (e.g., "my-wallet.vercel.app" or "localhost")
 const RP_ID = new URL(WALLET_URL).hostname;
@@ -32,13 +31,6 @@ const ALLOWED_ORIGINS = [
   `http://localhost:${PORT}`,
   `http://127.0.0.1:${PORT}`,
   'http://wallet.localhost:3001',
-].filter(Boolean);
-
-const ALLOWED_MERCHANT_ORIGINS = [
-  MERCHANT_URL,
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-  'http://store.localhost:3000',
 ].filter(Boolean);
 
 function signChallengeToken(payload) {
@@ -126,11 +118,10 @@ function getRpIdFromRequest(req) {
   return getRequestHost(req).split(':')[0];
 }
 
-function buildAllowedOrigins(req) {
+function buildAllowedWalletOrigins(req) {
   return Array.from(new Set([
     ...ALLOWED_ORIGINS,
     getRequestOrigin(req),
-    getForwardedHeader(req.headers.origin),
   ].filter(Boolean)));
 }
 
@@ -255,6 +246,7 @@ app.post('/api/register/options', async (req, res) => {
       phoneNumber,
       challenge: options.challenge,
       rpID: dynamicRpId,
+      origin: getRequestOrigin(req),
       exp: Date.now() + CHALLENGE_TOKEN_TTL_MS,
     });
 
@@ -278,6 +270,7 @@ app.post('/api/register/verify', async (req, res) => {
 
     const dynamicRpId = getRpIdFromRequest(req);
     let expectedRPID = dynamicRpId;
+    let expectedOrigin = buildAllowedWalletOrigins(req);
     let expectedChallenge;
 
     if (verificationToken) {
@@ -291,6 +284,9 @@ app.post('/api/register/verify', async (req, res) => {
       }
       expectedChallenge = payload.challenge;
       expectedRPID = payload.rpID || dynamicRpId;
+      if (payload.origin) {
+        expectedOrigin = payload.origin;
+      }
     } else {
       expectedChallenge = store.getChallenge(`reg:${phoneNumber}`);
       if (!expectedChallenge) {
@@ -298,13 +294,10 @@ app.post('/api/register/verify', async (req, res) => {
       }
     }
 
-    // Allow dynamic origins for Vercel preview environments
-    const allowedOrigins = buildAllowedOrigins(req);
-
     const verification = await verifyRegistrationResponse({
       response,
       expectedChallenge,
-      expectedOrigin: allowedOrigins,
+      expectedOrigin,
       expectedRPID,
     });
 
@@ -358,6 +351,7 @@ app.post('/api/login/options', async (req, res) => {
       phoneNumber: phoneNumber || null,
       challenge: options.challenge,
       rpID: dynamicRpId,
+      origin: getRequestOrigin(req),
       exp: Date.now() + CHALLENGE_TOKEN_TTL_MS,
     });
 
@@ -387,6 +381,7 @@ app.post('/api/login/verify', async (req, res) => {
     const dynamicRpId = getRpIdFromRequest(req);
     let expectedChallenge;
     let expectedRPID = dynamicRpId;
+    let expectedOrigin = buildAllowedWalletOrigins(req);
     let tokenPhoneNumber = null;
 
     if (verificationToken) {
@@ -401,6 +396,9 @@ app.post('/api/login/verify', async (req, res) => {
       expectedChallenge = payload.challenge;
       expectedRPID = payload.rpID || dynamicRpId;
       tokenPhoneNumber = payload.phoneNumber || null;
+      if (payload.origin) {
+        expectedOrigin = payload.origin;
+      }
       if (phoneNumber && tokenPhoneNumber && phoneNumber !== tokenPhoneNumber) {
         return res.status(400).json({ error: 'Verification token does not match phone number' });
       }
@@ -421,13 +419,10 @@ app.post('/api/login/verify', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Allow dynamic origins for Vercel preview environments
-    const allowedOrigins = buildAllowedOrigins(req);
-
     const verification = await verifyAuthenticationResponse({
       response,
       expectedChallenge,
-      expectedOrigin: allowedOrigins,
+      expectedOrigin,
       expectedRPID,
       credential: {
         id: credential.id,
