@@ -585,13 +585,11 @@ app.post('/api/login/options', async (req, res) => {
       })),
       userVerification: 'preferred',
     });
-
-    // Let the browser surface a same-device passkey chooser for known users
-    // instead of hinting a specific credential transport, which can push some
-    // mobile browsers into hybrid/QR fallback.
-    if (phoneNumber && hasPasskeys) {
-      delete options.allowCredentials;
-    }
+    // This is a username-first flow: the user has already identified the
+    // account with their phone number, so authentication should stay scoped to
+    // that account's known credential IDs. Omitting allowCredentials is the
+    // usernameless/discoverable pattern, and that breaks some Android third-
+    // party passkey providers such as 1Password during assertion lookup.
 
     logWalletEvent('info', 'passkey_auth_options', {
       phoneNumber: maskPhoneNumber(phoneNumber),

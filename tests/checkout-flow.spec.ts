@@ -191,6 +191,12 @@ test('wallet login options can restore passkey credentials from phone-bound clie
   expect(res.ok()).toBeTruthy();
   const payload = await res.json();
   expect(payload.hasPasskeys).toBe(true);
+  expect(payload.options.allowCredentials).toEqual([
+    expect.objectContaining({
+      id: credentialHint.id,
+      type: 'public-key',
+    }),
+  ]);
 
   const tokenPayload = decodeSignedTokenPayload(payload.verificationToken);
   expect(tokenPayload.user.phoneNumber).toBe(phoneNumber);
