@@ -559,10 +559,7 @@ class PassWalletCheckout {
           const optData = this._normalizePasskeyOptions(optionsData);
           if (!this._isCurrentFlow(flowEpoch)) return;
 
-          const allowCredentials = Array.isArray(optData.options?.allowCredentials)
-            ? optData.options.allowCredentials
-            : [];
-          if (allowCredentials.length === 0) {
+          if (optData.hasPasskeys === false) {
             // No server-known passkey for this phone in this session: use OTP.
             this.hasPasskey = false;
             payBtn.disabled = false;

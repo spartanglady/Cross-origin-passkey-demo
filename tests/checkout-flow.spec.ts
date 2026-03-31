@@ -255,6 +255,7 @@ test('returning WebCrypto user with passkey can switch to OTP when passkey auth 
           },
           sessionId: 'session-1',
           verificationToken: 'token-1',
+          hasPasskeys: true,
         };
       }
       return originalWalletFetch(path, body);

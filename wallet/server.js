@@ -300,7 +300,8 @@ app.post('/api/register/options', async (req, res) => {
         type: 'public-key',
       })),
       authenticatorSelection: {
-        residentKey: 'preferred',
+        residentKey: 'required',
+        requireResidentKey: true,
         userVerification: 'preferred',
       },
     });
@@ -383,11 +384,13 @@ app.post('/api/login/options', async (req, res) => {
   try {
     const { phoneNumber } = req.body || {};
     let userCredentials = [];
+    let hasPasskeys = false;
 
     if (phoneNumber) {
       const user = store.getUser(phoneNumber);
       if (!user) return res.status(404).json({ error: 'User not found' });
       userCredentials = store.getCredentialsByPhoneNumber(phoneNumber);
+      hasPasskeys = userCredentials.length > 0;
     }
 
     const tokenCredentials = userCredentials
@@ -404,6 +407,13 @@ app.post('/api/login/options', async (req, res) => {
       userVerification: 'preferred',
     });
 
+    // Let the browser surface a same-device passkey chooser for known users
+    // instead of hinting a specific credential transport, which can push some
+    // mobile browsers into hybrid/QR fallback.
+    if (phoneNumber && hasPasskeys) {
+      delete options.allowCredentials;
+    }
+
     const sessionId = phoneNumber || Math.random().toString(36).slice(2);
     const verificationToken = signChallengeToken({
       type: 'auth',
@@ -416,7 +426,7 @@ app.post('/api/login/options', async (req, res) => {
     // Legacy fallback path if old clients do not return verificationToken
     store.setChallenge(`auth:${sessionId}`, options.challenge);
 
-    res.json({ options, sessionId, verificationToken });
+    res.json({ options, sessionId, verificationToken, hasPasskeys });
   } catch (error) {
     console.error('Login options error:', error);
     res.status(500).json({ error: 'Failed to generate authentication options' });
