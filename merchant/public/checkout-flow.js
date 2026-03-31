@@ -21,6 +21,8 @@ class PassWalletCheckout {
     this.cvvValue = '';
     this.isDestroyed = false;
     this._paymentInProgress = false;
+    this._phoneSubmitting = false;
+    this._flowEpoch = 0;
 
     // DOM refs
     this.container = document.getElementById('passwallet-checkout');
@@ -35,6 +37,10 @@ class PassWalletCheckout {
 
     this._bindEvents();
     this._init();
+  }
+
+  _isCurrentFlow(flowEpoch) {
+    return !this.isDestroyed && flowEpoch === this._flowEpoch;
   }
 
   // =========================================================
@@ -187,9 +193,12 @@ class PassWalletCheckout {
   // =========================================================
 
   async _handlePhoneSubmit() {
+    if (this._phoneSubmitting) return;
     const phoneInput = document.getElementById('pw-phone-input');
     const raw = phoneInput.value.replace(/\D/g, '');
     if (raw.length !== 10) return;
+    const flowEpoch = this._flowEpoch;
+    this._phoneSubmitting = true;
 
     this.phoneNumber = raw;
     const phoneBtn = document.getElementById('pw-phone-btn');
@@ -202,26 +211,35 @@ class PassWalletCheckout {
     try {
       const sdk = window.PassWallet;
       data = await sdk.lookup(this.phoneNumber);
+      if (!this._isCurrentFlow(flowEpoch)) return;
       this.hasPasskey = data.hasPasskey;
     } catch (err) {
+      if (!this._isCurrentFlow(flowEpoch)) return;
       console.error(err);
       phoneLoading.style.display = 'none';
       phoneBtn.disabled = false;
       this._showError('Network error. Please try again.');
       return;
+    } finally {
+      if (this._isCurrentFlow(flowEpoch)) {
+        phoneLoading.style.display = 'none';
+        phoneBtn.disabled = false;
+      }
+      this._phoneSubmitting = false;
     }
 
-    // Lookup done — hide loading
-    phoneLoading.style.display = 'none';
-    phoneBtn.disabled = false;
+    if (!this._isCurrentFlow(flowEpoch)) return;
 
     if (data.exists && this.hasPasskey) {
       // Show bridge button on the phone step for passkey auth
-      await this._attemptPasskeyLogin();
+      await this._attemptPasskeyLogin(flowEpoch);
     } else {
       // No passkey, go to OTP
+      const sdk = window.PassWallet;
+      sdk.hidePasskeyButton();
       this.flowMode = 'INITIAL';
       await this._sendOTP();
+      if (!this._isCurrentFlow(flowEpoch)) return;
       this.navigateTo('pw-step-otp');
       setTimeout(() => document.getElementById('pw-otp-input').focus(), 300);
     }
@@ -232,7 +250,7 @@ class PassWalletCheckout {
    * Fetches auth options first, then shows bridge button for user click.
    * Falls back to OTP on cancellation or error.
    */
-  async _attemptPasskeyLogin() {
+  async _attemptPasskeyLogin(flowEpoch = this._flowEpoch) {
     const sdk = window.PassWallet;
     const phoneBtn = document.getElementById('pw-phone-btn');
     const phoneLoading = document.getElementById('pw-phone-loading');
@@ -246,6 +264,7 @@ class PassWalletCheckout {
       const optData = await sdk._walletFetch('/api/login/options', {
         phoneNumber: this.phoneNumber,
       });
+      if (!this._isCurrentFlow(flowEpoch)) return;
 
       // Step 2: Options ready — hide loading, show bridge button on phone step
       phoneLoading.style.display = 'none';
@@ -259,6 +278,7 @@ class PassWalletCheckout {
       const asseResp = await sdk._postToBridge('PASSKEY_AUTH_REQUEST', {
         options: optData.options,
       });
+      if (!this._isCurrentFlow(flowEpoch)) return;
 
       // Step 4: User clicked, ceremony complete — verify on server
       sdk.hidePasskeyButton();
@@ -267,13 +287,16 @@ class PassWalletCheckout {
         sessionId: optData.sessionId,
         response: asseResp,
       });
+      if (!this._isCurrentFlow(flowEpoch)) return;
 
       this.user = verData.user;
       this.flowMode = 'PASSKEY_LOGIN';
       await this._ensureWebCryptoKeypair();
+      if (!this._isCurrentFlow(flowEpoch)) return;
       this._setupPaymentView(true);
       this.navigateTo('pw-step-payment');
     } catch (err) {
+      if (!this._isCurrentFlow(flowEpoch)) return;
       sdk.hidePasskeyButton();
       phoneLoading.style.display = 'none';
       phoneBtn.disabled = false;
@@ -296,6 +319,7 @@ class PassWalletCheckout {
 
   async _handleOTPSubmit() {
     if (this._otpSubmitting) return;
+    const flowEpoch = this._flowEpoch;
     const otpInput = document.getElementById('pw-otp-input');
     const otp = otpInput.value.replace(/\D/g, '');
     if (otp.length !== 6) return;
@@ -310,20 +334,23 @@ class PassWalletCheckout {
     try {
       const sdk = window.PassWallet;
       const data = await sdk.verifyOTP(this.phoneNumber, otp);
+      if (!this._isCurrentFlow(flowEpoch)) return;
       this.user = data.user;
 
       if (this.flowMode === 'WEBCRYPTO_OTP_FALLBACK') {
         // WebCrypto returning user who failed passkey — payment satisfied
-        await this._processPayment();
+        await this._processPayment(flowEpoch);
       } else {
         // Normal INITIAL flow — need CVV
         this._setupPaymentView(false);
         this.navigateTo('pw-step-payment');
       }
     } catch (err) {
+      if (!this._isCurrentFlow(flowEpoch)) return;
       errEl.textContent = err.message || 'Verification failed. Please try again.';
       errEl.style.display = 'block';
     } finally {
+      if (!this._isCurrentFlow(flowEpoch)) return;
       this._otpSubmitting = false;
       btn.disabled = false;
       btn.textContent = 'Verify Code';
@@ -417,6 +444,7 @@ class PassWalletCheckout {
 
   async _handlePayClick() {
     if (!this.selectedCardId) return;
+    const flowEpoch = this._flowEpoch;
     const sdk = window.PassWallet;
 
     if (this.flowMode === 'INITIAL') {
@@ -436,9 +464,10 @@ class PassWalletCheckout {
         const registerSlot = document.getElementById('pw-register-iframe-slot');
         this.navigateTo('pw-step-register-passkey');
         await sdk.reparent(registerSlot);
-        this._prepareRegistration();
+        if (!this._isCurrentFlow(flowEpoch)) return;
+        this._prepareRegistration(flowEpoch);
       } else {
-        await this._processPayment();
+        await this._processPayment(flowEpoch);
       }
 
     } else if (this.flowMode === 'WEBCRYPTO_RETURNING') {
@@ -453,6 +482,7 @@ class PassWalletCheckout {
           const optData = await sdk._walletFetch('/api/login/options', {
             phoneNumber: this.phoneNumber,
           });
+          if (!this._isCurrentFlow(flowEpoch)) return;
 
           // Step 2: Options ready — hide pay button, show bridge button
           payBtn.style.display = 'none';
@@ -464,6 +494,7 @@ class PassWalletCheckout {
           const asseResp = await sdk._postToBridge('PASSKEY_AUTH_REQUEST', {
             options: optData.options,
           });
+          if (!this._isCurrentFlow(flowEpoch)) return;
 
           // Step 4: Verify on server
           sdk.hidePasskeyButton();
@@ -472,11 +503,13 @@ class PassWalletCheckout {
             sessionId: optData.sessionId,
             response: asseResp,
           });
+          if (!this._isCurrentFlow(flowEpoch)) return;
 
           payBtn.style.display = '';
           this.user = verData.user;
-          await this._processPayment();
+          await this._processPayment(flowEpoch);
         } catch (err) {
+          if (!this._isCurrentFlow(flowEpoch)) return;
           sdk.hidePasskeyButton();
           payBtn.style.display = '';
           payBtn.disabled = false;
@@ -495,13 +528,14 @@ class PassWalletCheckout {
         // No passkey, fall to OTP
         this.flowMode = 'WEBCRYPTO_OTP_FALLBACK';
         await this._sendOTP();
+        if (!this._isCurrentFlow(flowEpoch)) return;
         this.navigateTo('pw-step-otp');
         setTimeout(() => document.getElementById('pw-otp-input').focus(), 300);
       }
 
     } else if (this.flowMode === 'PASSKEY_LOGIN') {
       // Already authenticated via passkey
-      await this._processPayment();
+      await this._processPayment(flowEpoch);
     }
   }
 
@@ -514,7 +548,7 @@ class PassWalletCheckout {
    * as the sole "Save Passkey" action. The merchant button is hidden —
    * user only clicks the bridge button (one click for WebAuthn).
    */
-  async _prepareRegistration() {
+  async _prepareRegistration(flowEpoch = this._flowEpoch) {
     const sdk = window.PassWallet;
     const loadingEl = document.getElementById('pw-register-loading');
 
@@ -527,6 +561,7 @@ class PassWalletCheckout {
         phoneNumber: this.phoneNumber,
         displayName: this.user.displayName,
       });
+      if (!this._isCurrentFlow(flowEpoch)) return;
 
       // Step 2: Options ready — hide loading, show bridge button
       loadingEl.style.display = 'none';
@@ -536,6 +571,7 @@ class PassWalletCheckout {
       const attResp = await sdk._postToBridge('PASSKEY_REGISTER_REQUEST', {
         options,
       });
+      if (!this._isCurrentFlow(flowEpoch)) return;
 
       // Step 4: User clicked bridge button, ceremony complete — verify on server
       sdk.hidePasskeyButton();
@@ -543,12 +579,14 @@ class PassWalletCheckout {
         phoneNumber: this.phoneNumber,
         response: attResp,
       });
+      if (!this._isCurrentFlow(flowEpoch)) return;
 
       if (result.verified) {
         this.hasPasskey = true;
       }
-      await this._processPayment();
+      await this._processPayment(flowEpoch);
     } catch (err) {
+      if (!this._isCurrentFlow(flowEpoch)) return;
       sdk.hidePasskeyButton();
       loadingEl.style.display = 'none';
 
@@ -560,10 +598,10 @@ class PassWalletCheckout {
       console.error('Passkey registration error:', err);
       if (err.name === 'NotAllowedError') {
         // User cancelled WebAuthn — proceed to payment
-        await this._processPayment();
+        await this._processPayment(flowEpoch);
       } else {
         this._showError('Failed to register passkey. Continuing to payment.');
-        await this._processPayment();
+        await this._processPayment(flowEpoch);
       }
     }
   }
@@ -572,16 +610,19 @@ class PassWalletCheckout {
   // Payment Processing
   // =========================================================
 
-  async _processPayment() {
+  async _processPayment(flowEpoch = this._flowEpoch) {
+    if (!this._isCurrentFlow(flowEpoch)) return;
     if (this._paymentInProgress) return;
     this._paymentInProgress = true;
     this.navigateTo('pw-step-processing');
     const processingText = document.getElementById('pw-processing-text');
     const spinner = document.querySelector('#pw-step-processing .pw-spinner');
+    processingText.textContent = 'Processing payment...';
 
     try {
       const sdk = window.PassWallet;
       const data = await sdk.pay(this.phoneNumber, this.selectedCardId, this.amount);
+      if (!this._isCurrentFlow(flowEpoch)) return;
 
       if (data.success) {
         // Populate inline success step
@@ -595,9 +636,12 @@ class PassWalletCheckout {
         throw new Error(data.error || 'Payment failed');
       }
     } catch (err) {
+      if (!this._isCurrentFlow(flowEpoch)) return;
       processingText.textContent = 'Payment failed';
       this._showError(err.message);
       this.navigateTo('pw-step-payment');
+    } finally {
+      this._paymentInProgress = false;
     }
   }
 
@@ -672,13 +716,32 @@ class PassWalletCheckout {
   async _ensureWebCryptoKeypair() {
     try {
       let deviceId = localStorage.getItem('pw_device_id');
-      if (deviceId) return;
+      if (!deviceId) {
+        deviceId = 'dev_' + Math.random().toString(36).substr(2, 9);
+      }
 
-      deviceId = 'dev_' + Math.random().toString(36).substr(2, 9);
       const sdk = window.PassWallet;
+      let pubB64 = localStorage.getItem('pw_mock_key') || '';
 
-      let pubB64 = '';
-      if (window.crypto && window.crypto.subtle) {
+      if (!pubB64 && window.crypto && window.crypto.subtle && window.indexedDB) {
+        try {
+          const keypair = await Promise.race([
+            import('https://unpkg.com/idb-keyval@6.0.3/dist/index.js?module')
+              .then(({ get }) => get('device_key')),
+            new Promise(resolve => setTimeout(() => resolve(null), 3000))
+          ]);
+          if (keypair && keypair.publicKey) {
+            const exportedPub = await window.crypto.subtle.exportKey('spki', keypair.publicKey);
+            const pubBuf = new Uint8Array(exportedPub);
+            pubB64 = btoa(String.fromCharCode.apply(null, pubBuf));
+            localStorage.setItem('pw_mock_key', pubB64);
+          }
+        } catch (idbErr) {
+          console.warn('Existing key read failed, regenerating', idbErr);
+        }
+      }
+
+      if (!pubB64 && window.crypto && window.crypto.subtle) {
         try {
           const keypair = await window.crypto.subtle.generateKey(
             { name: 'ECDSA', namedCurve: 'P-256' },
@@ -698,17 +761,15 @@ class PassWalletCheckout {
             ]);
             if (!stored) {
               console.warn('IDB store timed out, using localStorage fallback');
-              localStorage.setItem('pw_mock_key', pubB64);
             }
-          } else {
-            localStorage.setItem('pw_mock_key', pubB64);
           }
+          localStorage.setItem('pw_mock_key', pubB64);
         } catch (cryptoErr) {
           console.warn('WebCrypto failed, using mock key', cryptoErr);
-          pubB64 = btoa('mock-key-' + deviceId);
-          localStorage.setItem('pw_mock_key', pubB64);
         }
-      } else {
+      }
+
+      if (!pubB64) {
         pubB64 = btoa('mock-key-' + deviceId);
         localStorage.setItem('pw_mock_key', pubB64);
       }
@@ -765,16 +826,13 @@ class PassWalletCheckout {
   }
 
   _handleLogout() {
-    localStorage.removeItem('pw_device_id');
-    localStorage.removeItem('pw_mock_key');
-
-    if (window.indexedDB) {
-      import('https://unpkg.com/idb-keyval@6.0.3/dist/index.js?module')
-        .then(({ del }) => del('device_key'))
-        .catch(console.warn);
+    this._flowEpoch += 1;
+    if (window.PassWallet) {
+      window.PassWallet.abortPendingRequests();
+      window.PassWallet.hidePasskeyButton();
     }
 
-    // Reset state and go back to phone
+    // Reset checkout state and go back to phone for manual user switch
     this.phoneNumber = '';
     this.user = null;
     this.hasPasskey = false;
@@ -782,6 +840,9 @@ class PassWalletCheckout {
     this.flowMode = 'INITIAL';
     this.skipCVV = false;
     this.cvvValue = '';
+    this._paymentInProgress = false;
+    this._otpSubmitting = false;
+    this._phoneSubmitting = false;
 
     document.getElementById('pw-phone-input').value = '';
     document.getElementById('pw-otp-input').value = '';
@@ -792,6 +853,7 @@ class PassWalletCheckout {
 
   destroy() {
     this.isDestroyed = true;
+    this._flowEpoch += 1;
     this._paymentInProgress = false;
     if (window.PassWallet) {
       window.PassWallet.hidePasskeyButton();

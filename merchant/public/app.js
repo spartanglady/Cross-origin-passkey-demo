@@ -2,6 +2,8 @@
 document.addEventListener('DOMContentLoaded', () => {
   let cart = [];
   let checkoutInstance = null;
+  let sdkWaitPromise = null;
+  let checkoutErrorTimer = null;
 
   // DOM Elements
   const cartToggleBtn = document.getElementById('cart-toggle');
@@ -64,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (cart.length === 0) {
       cartItemsContainer.innerHTML = '<p class="empty-msg">Your cart is empty.</p>';
       startCheckoutBtn.disabled = true;
+      startCheckoutBtn.textContent = 'Checkout';
     } else {
       cartItemsContainer.innerHTML = cart.map(item => `
         <div class="cart-item">
@@ -83,6 +86,9 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       `).join('');
       startCheckoutBtn.disabled = false;
+      if (!checkoutErrorTimer) {
+        startCheckoutBtn.textContent = 'Checkout';
+      }
     }
 
     // Render checkout screen items list
@@ -106,6 +112,17 @@ document.addEventListener('DOMContentLoaded', () => {
     checkoutAmountDisplay.textContent = formattedSubtotal;
     checkoutSubtotal.textContent = formattedSubtotal;
     checkoutGrandTotal.textContent = formattedSubtotal;
+  }
+
+  function flashCheckoutError(message) {
+    clearTimeout(checkoutErrorTimer);
+    startCheckoutBtn.textContent = message;
+    startCheckoutBtn.disabled = true;
+    checkoutErrorTimer = setTimeout(() => {
+      checkoutErrorTimer = null;
+      startCheckoutBtn.textContent = 'Checkout';
+      startCheckoutBtn.disabled = cart.length === 0;
+    }, 2200);
   }
 
   window.updateQty = (id, delta) => {
@@ -168,27 +185,57 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function initCheckout() {
-    destroyCheckout();
+  function waitForPassWalletSDK(timeoutMs = 8000) {
+    if (window.PassWallet) return Promise.resolve(window.PassWallet);
+    if (sdkWaitPromise) return sdkWaitPromise;
 
-    if (window.PassWallet) {
-      checkoutInstance = new PassWalletCheckout({
-        amount: currentSubtotal.toFixed(2),
-        merchantName: 'KEYSMITH.',
-        onComplete: (data) => {
-          cart = [];
-          updateCartUI();
-          showStorefrontPage();
-        },
-        onCancel: () => {
-          showStorefrontPage();
-          openDrawer();
+    sdkWaitPromise = new Promise((resolve) => {
+      const startedAt = Date.now();
+      const timer = setInterval(() => {
+        if (window.PassWallet) {
+          clearInterval(timer);
+          resolve(window.PassWallet);
+          return;
         }
-      });
-    }
+        if (Date.now() - startedAt >= timeoutMs) {
+          clearInterval(timer);
+          resolve(null);
+        }
+      }, 120);
+    }).finally(() => {
+      sdkWaitPromise = null;
+    });
+
+    return sdkWaitPromise;
   }
 
-  startCheckoutBtn.addEventListener('click', () => {
+  async function initCheckout() {
+    destroyCheckout();
+
+    const sdk = await waitForPassWalletSDK();
+    if (!sdk) {
+      showStorefrontPage();
+      openDrawer();
+      flashCheckoutError('Wallet unavailable');
+      return;
+    }
+
+    checkoutInstance = new PassWalletCheckout({
+      amount: currentSubtotal.toFixed(2),
+      merchantName: 'KEYSMITH.',
+      onComplete: (data) => {
+        cart = [];
+        updateCartUI();
+        showStorefrontPage();
+      },
+      onCancel: () => {
+        showStorefrontPage();
+        openDrawer();
+      }
+    });
+  }
+
+  startCheckoutBtn.addEventListener('click', async () => {
     if (cart.length === 0) return;
 
     closeDrawer();
@@ -196,7 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     currentSubtotal = cart.reduce((s, item) => s + (item.price * item.qty), 0);
 
-    initCheckout();
+    await initCheckout();
   });
 
   // Init

@@ -1,191 +1,162 @@
-# Cross-Origin Passkey Demo
+# Cross-Origin PassWallet Demo
 
-A working demo that proves **WebAuthn passkeys work within cross-origin iframes** -- enabling embedded checkout experiences where users authenticate with biometrics, select a payment card, and complete checkout without ever leaving the merchant's site.
+This demo shows a **merchant-native checkout UX** that uses an embedded wallet service on a different origin only when required (passkey ceremonies), while keeping the rest of the experience in the merchant UI.
 
+The goal is to prove this pattern:
+
+1. Merchant keeps full control of storefront + checkout layout.
+2. Wallet SDK provides auth/payment APIs.
+3. A minimal iframe button is shown only for WebAuthn operations that must run on the wallet origin.
+
+## What This Demo Covers
+
+### First-time user
+
+1. Enter phone on merchant checkout.
+2. OTP verification.
+3. Card selection + CVV.
+4. Device binding established (WebCrypto-backed demo binding).
+5. Optional passkey registration prompt (minimal iframe button from wallet origin).
+6. Payment completes in merchant-native flow.
+
+### Returning user with device binding
+
+1. Cards auto-display without phone step.
+2. If passkey exists: pay click requires passkey (iframe button), then payment.
+3. If passkey does not exist: pay click falls back to OTP, then payment.
+4. User can click **Change** to switch to a different phone/login path.
+
+### Phone-entry user with passkey
+
+1. Enter phone.
+2. Minimal iframe passkey button shown on phone step.
+3. If passkey succeeds: go straight to payment.
+4. If passkey is cancelled/fails: fall back to OTP flow.
 
 ## Architecture
 
-Two separate web applications running on **different origins** to demonstrate true cross-origin behavior:
+Two applications run on different origins:
 
-| Component | URL (Live Demo) | Role |
-|-----------|-----------|------|
-| **Keysmith** (Merchant) | `https://guileless-griffin-587ce2.netlify.app/` | Custom mechanical keyboards store |
-| **PassWallet** (Wallet) | `https://cross-origin-passkey-demo.vercel.app/` | Passkey-authenticated wallet, embedded via SDK/iframe |
+| Component | Local URL | Role |
+|---|---|---|
+| Merchant (Keysmith) | `http://localhost:3000` | Storefront + merchant-native checkout UI/state machine |
+| Wallet (PassWallet) | `http://localhost:3001` | Auth/payment APIs, WebAuthn verification, passkey bridge + SDK |
 
-The merchant embeds PassWallet in an iframe with the required permissions policy:
+### Core integration model
 
-```javascript
-// Wallet iframe is dynamically injected via the SDK
-window.PassWallet.mount({
-    container: document.getElementById('passwallet-mount-point'),
-    checkoutData: { amount: 100.00 },
-    onComplete: handleSuccess
-});
-```
-
-Communication between merchant and wallet uses `window.postMessage` with strict origin validation.
-
-## User Flow
-
-```
-Merchant Site                          PassWallet (iframe)
-    |                                        |
-    |  1. User shops, adds to cart           |
-    |  2. Selects "PassWallet" in checkout   |
-    |  -------- iframe opens ---------->     |
-    |  3. INIT_CHECKOUT (postMessage)  ----> |
-    |                                        |  4. User enters phone (or conditional autofill)
-    |                                        |  5a. New user: Register passkey
-    |                                        |  5b. Existing user: Sign in with passkey
-    |                                        |  6. Select card from carousel
-    |                                        |  7. Click "Pay"
-    |  <---- PAYMENT_COMPLETE (postMessage)  |
-    |  8. Show confirmation, close iframe    |
-```
+- Merchant dynamically loads `sdk.js` from wallet origin.
+- Checkout logic lives in merchant UI (`checkout-flow.js`).
+- Passkey ceremonies run in wallet-origin iframe (`passkey-bridge.html/js`).
+- Merchant and bridge communicate through SDK-managed `postMessage`.
 
 ## Quick Start
 
 ```bash
-# Install dependencies
 npm install
-
-# Start both servers
 npm start
 ```
 
-Then open **http://localhost:3000** in your browser.
+Open:
 
-### Demo User
+- Merchant: `http://localhost:3000`
+- Wallet: `http://localhost:3001`
 
-A pre-seeded user is available for quick testing (no passkey registration needed for the phone lookup flow):
+## Demo OTP/CVV Values
 
-- **Phone:** `1234567890`
-- **Name:** Alex Johnson
-- **Cards:** Visa 4242, Mastercard 8888, Amex 1234
+- OTP: `111111`
+- CVV: `123`
 
-> Note: Since this user has no passkey credential registered in your browser, you'll need to register a new account with a fresh phone number to test the full passkey flow.
-> The app also features **Conditional Passkey Autofill** for returning users, presented on the phone number entry screen.
+These are intentionally fixed for demo flow validation.
 
-## Tech Stack
+## Playwright Test Suite
 
-- **Backend:** Node.js + Express
-- **WebAuthn:** [@simplewebauthn/server](https://simplewebauthn.dev/) + [@simplewebauthn/browser](https://simplewebauthn.dev/)
-- **Frontend:** Vanilla HTML/CSS/JS (no frameworks)
-- **Storage:** In-memory (demo only)
+This repo includes end-to-end coverage for the checkout state machine and fallback behavior.
 
-## How the Cross-Origin Passkey Works
-
-### The Problem
-By default, browsers block `navigator.credentials.create()` and `navigator.credentials.get()` in cross-origin iframes. This prevents embedded checkout widgets from using passkeys.
-
-### The Solution
-The [Permissions Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Permissions-Policy) mechanism allows the parent page to explicitly grant passkey access to the iframe:
-
-1. **Merchant (parent)** sets the `allow` attribute on the iframe:
-   ```html
-   <iframe allow="publickey-credentials-get; publickey-credentials-create" ...>
-   ```
-
-2. **Wallet (iframe server)** sets the `Permissions-Policy` response header:
-   ```
-   Permissions-Policy: publickey-credentials-get=(*), publickey-credentials-create=(*)
-   ```
-
-3. **User activation** is required -- passkey operations must be triggered by a user click (not programmatically), which the wallet UI handles with explicit "Register" / "Sign in" buttons.
-
-### Browser Support
-
-| Browser | Registration (create) | Authentication (get) |
-|---------|----------------------|---------------------|
-| Chrome 123+ | Yes | Yes |
-| Firefox | Yes | Yes |
-| Safari | No | Yes |
-
-## Deployment
-
-This project is structured for deployment as two separate projects (Wallet on Vercel, Merchant on Netlify):
-
-### 1. Deploy the Wallet (PassWallet)
+### Install browser once
 
 ```bash
-cd wallet
-vercel --prod
+npx playwright install chromium
 ```
 
-Set environment variables in Vercel:
-- `WALLET_URL` = `https://your-wallet.vercel.app`
-- `MERCHANT_URL` = `https://your-merchant.vercel.app`
-
-### 2. Deploy the Merchant (Keysmith Store)
-
-The merchant project is configured for deployment on **Netlify**. Set the `WALLET_ORIGIN` environment variable in Netlify.
-
-The merchant app explicitly fetches this value via a Netlify Function (`/.netlify/functions/config`) which is proxied through `/api/config` to dynamically load the wallet SDK:
-
-```javascript
-fetch('/api/config')
-  .then(r => r.json())
-  .then(c => {
-    // Dynamically inject the PassWallet SDK from the configured origin
-  });
-```
-
-Then deploy using the Netlify CLI:
+### Run tests
 
 ```bash
-cd merchant
-netlify deploy --prod
+npm test
 ```
 
-### Key Deployment Notes
+### Covered scenarios
 
-- The two apps **must** be on different origins (different domains/subdomains) for the cross-origin demo to be meaningful
-- The WebAuthn RP ID is automatically derived from the wallet's hostname
-- CORS is configured to accept requests from the merchant's origin
+1. First-time user: OTP + CVV + skip passkey registration.
+2. Phone-entry passkey path: cancelled passkey falls back to OTP.
+3. Returning device-bound user without passkey: pay triggers OTP fallback.
+4. Returning device-bound user with passkey: cancelled passkey falls back to OTP.
+5. Returning user clicks **Change** and logs in as a different phone.
+
+## Environment Variables
+
+### Merchant app
+
+- `WALLET_ORIGIN` (preferred): wallet base URL used to load `sdk.js`
+- `WALLET_URL` (fallback)
+
+### Wallet app
+
+- `WALLET_URL`: wallet base URL used for RP host derivation
+- `MERCHANT_URL`: allowed merchant URL for demo configuration
+
+The Playwright config sets these automatically for local tests.
+
+## Deployment Notes
+
+- Merchant is configured for Netlify static hosting (`merchant/netlify.toml`) with config endpoint support.
+- Wallet is configured for Vercel (`wallet/vercel.json`, `wallet/api/index.js`).
+- The two apps must be deployed to different origins to demonstrate real cross-origin behavior.
 
 ## Project Structure
 
-```
+```text
 Cross-origin-passkey-demo/
-├── package.json                 # Root: runs both servers locally
+├── playwright.config.ts
+├── tests/
+│   └── checkout-flow.spec.ts
 ├── merchant/
-│   ├── netlify/
-│   │   └── functions/
-│   │       └── config.js        # Netlify serverless config endpoint
-│   ├── server.js                # Express static server (port 3000)
-│   ├── netlify.toml             # Netlify static deployment config
+│   ├── server.js
+│   ├── api/config.js
+│   ├── netlify/functions/config.js
 │   └── public/
-│       ├── css/
-│       │   └── style.css        # Merchant styling
-│       ├── index.html           # Keysmith store UI
-│       └── app.js               # Cart, UI logic, SDK integration
+│       ├── index.html
+│       ├── app.js
+│       ├── checkout-flow.js
+│       └── css/style.css
 ├── wallet/
-│   ├── server.js                # Express + WebAuthn API (port 3001)
-│   ├── store.js                 # In-memory user/credential/card store
-│   ├── vercel.json              # Vercel serverless config
-│   ├── api/
-│   │   └── index.js             # Vercel serverless entry point
+│   ├── server.js
+│   ├── store.js
+│   ├── api/index.js
 │   └── public/
-│       ├── css/
-│       │   └── wallet.css       # Wallet styling
-│       ├── sdk.js               # PassWallet Embedded SDK
-│       ├── checkout.html        # Multi-step checkout UI
-│       └── checkout.js          # WebAuthn client logic
+│       ├── sdk.js
+│       ├── passkey-bridge.html
+│       ├── passkey-bridge.js
+│       └── css/wallet.css
+└── package.json
 ```
 
-## API Endpoints (Wallet Server)
+## API Endpoints (Wallet)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/lookup` | Check if phone number has an account |
-| POST | `/api/auth/otp/send` | Send simulated OTP to phone number |
-| POST | `/api/auth/otp/verify` | Verify OTP and authenticate user |
-| POST | `/api/register/options` | Generate WebAuthn registration options |
-| POST | `/api/register/verify` | Verify registration and create account |
-| POST | `/api/login/options` | Generate WebAuthn authentication options |
-| POST | `/api/login/verify` | Verify authentication and return cards |
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/lookup` | Check phone account existence + passkey availability |
+| POST | `/api/auth/otp/send` | Send demo OTP |
+| POST | `/api/auth/otp/verify` | Verify OTP and return user/cards |
+| POST | `/api/register/options` | WebAuthn registration options |
+| POST | `/api/register/verify` | Verify registration |
+| POST | `/api/login/options` | WebAuthn authentication options |
+| POST | `/api/login/verify` | Verify authentication |
 | POST | `/api/pay` | Process mock payment |
+| POST | `/api/device/challenge` | Device-binding challenge |
+| POST | `/api/device/register` | Register device binding |
+| POST | `/api/device/verify` | Verify device binding |
 
 ## License
 
 MIT
+
