@@ -80,12 +80,18 @@ class PassWalletCheckout {
     const payAmountEl = document.getElementById('pw-pay-amount');
     if (payAmountEl) payAmountEl.textContent = `$${this.amount}`;
 
-    // Navigate to phone step (container is always visible in the layout)
-    this.navigateTo('pw-step-phone');
+    // Show a neutral startup state while probing local device binding.
+    // This avoids flashing the phone step before returning-user cards load.
+    const processingText = document.getElementById('pw-processing-text');
+    if (processingText) processingText.textContent = 'Checking saved wallet...';
+    this.navigateTo('pw-step-processing');
 
     // Attempt WebCrypto auto-login
     const loggedIn = await this._attemptWebCryptoLogin();
     if (!loggedIn) {
+      // Auto-login unavailable: show phone entry as the first visible step.
+      if (processingText) processingText.textContent = 'Processing payment...';
+      this.navigateTo('pw-step-phone');
       // Focus phone input
       const phoneInput = document.getElementById('pw-phone-input');
       if (phoneInput) setTimeout(() => phoneInput.focus(), 200);

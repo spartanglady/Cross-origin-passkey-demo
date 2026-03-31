@@ -60,6 +60,26 @@ async function expectSuccess(page: Page) {
   await expect(page.locator('#pw-conf-txn')).toContainText('TXN-');
 }
 
+test('WebAuthn options are pinned to the wallet RP ID', async ({ request }) => {
+  const phoneNumber = nextPhoneNumber();
+
+  const registerOptionsRes = await request.post(`${WALLET_ORIGIN}/api/register/options`, {
+    data: { phoneNumber, displayName: `User ${phoneNumber.slice(-4)}` },
+  });
+  expect(registerOptionsRes.ok()).toBeTruthy();
+  const registerOptions = await registerOptionsRes.json();
+  const registrationRpId = registerOptions?.options?.rp?.id ?? registerOptions?.options?.rpID;
+  expect(registrationRpId).toBe('localhost');
+
+  const loginOptionsRes = await request.post(`${WALLET_ORIGIN}/api/login/options`, {
+    data: { phoneNumber },
+  });
+  expect(loginOptionsRes.ok()).toBeTruthy();
+  const loginOptions = await loginOptionsRes.json();
+  const authenticationRpId = loginOptions?.options?.rpId ?? loginOptions?.options?.rpID;
+  expect(authenticationRpId).toBe('localhost');
+});
+
 test('first-time user completes OTP + CVV flow and skips passkey registration', async ({ page }) => {
   const phoneNumber = nextPhoneNumber();
 
@@ -232,4 +252,3 @@ test('returning user can click Change and log in as a different phone', async ({
   await expect(page.locator('#pw-display-phone')).toContainText(replacementPhone);
   await expect(page.locator('#pw-cvv-input')).toBeVisible();
 });
-

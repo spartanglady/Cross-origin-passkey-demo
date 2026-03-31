@@ -16,22 +16,18 @@ const PORT = 3001;
 // For Vercel: use WALLET_URL env var to determine RP_ID, or fall back to .localhost tests
 const VERCEL_WALLET_URL = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '';
 const WALLET_URL = process.env.WALLET_URL || VERCEL_WALLET_URL || `http://wallet.localhost:${PORT}`;
+const WALLET_URL_OBJ = new URL(WALLET_URL);
 
-// Extract hostname for WebAuthn RP ID (e.g., "my-wallet.vercel.app" or "localhost")
-const RP_ID = new URL(WALLET_URL).hostname;
+// Lock WebAuthn to wallet domain. Optional overrides allow explicit pinning.
+const RP_ID = process.env.WEBAUTHN_RP_ID || WALLET_URL_OBJ.hostname;
+const WALLET_ORIGIN = process.env.WEBAUTHN_ORIGIN
+  ? new URL(process.env.WEBAUTHN_ORIGIN).origin
+  : WALLET_URL_OBJ.origin;
 
 const RP_NAME = 'PassWallet';
 const DEMO_OTP = process.env.DEMO_OTP || '111111';
 const CHALLENGE_TOKEN_TTL_MS = 5 * 60 * 1000;
 const CHALLENGE_TOKEN_SECRET = process.env.CHALLENGE_TOKEN_SECRET || process.env.WALLET_URL || 'passwallet-demo-secret';
-
-// Build known origins list (for WebAuthn verification)
-const ALLOWED_ORIGINS = [
-  WALLET_URL,
-  `http://localhost:${PORT}`,
-  `http://127.0.0.1:${PORT}`,
-  'http://wallet.localhost:3001',
-].filter(Boolean);
 
 function signChallengeToken(payload) {
   const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
@@ -89,40 +85,6 @@ function respondWebAuthnError(res, context, error) {
     return res.status(400).json({ error: message });
   }
   return res.status(500).json({ error: context });
-}
-
-function getForwardedHeader(value) {
-  if (!value) return '';
-  return String(value).split(',')[0].trim();
-}
-
-function getRequestHost(req) {
-  return getForwardedHeader(req.headers['x-forwarded-host'])
-    || getForwardedHeader(req.headers.host)
-    || RP_ID;
-}
-
-function getRequestProtocol(req) {
-  return getForwardedHeader(req.headers['x-forwarded-proto'])
-    || req.protocol
-    || 'https';
-}
-
-function getRequestOrigin(req) {
-  const host = getRequestHost(req);
-  if (!host) return '';
-  return `${getRequestProtocol(req)}://${host}`;
-}
-
-function getRpIdFromRequest(req) {
-  return getRequestHost(req).split(':')[0];
-}
-
-function buildAllowedWalletOrigins(req) {
-  return Array.from(new Set([
-    ...ALLOWED_ORIGINS,
-    getRequestOrigin(req),
-  ].filter(Boolean)));
 }
 
 // Middleware
@@ -222,11 +184,9 @@ app.post('/api/register/options', async (req, res) => {
 
     const existingCredentials = store.getCredentialsByPhoneNumber(phoneNumber);
 
-    const dynamicRpId = getRpIdFromRequest(req);
-
     const options = await generateRegistrationOptions({
       rpName: RP_NAME,
-      rpID: dynamicRpId,
+      rpID: RP_ID,
       userID: new TextEncoder().encode(user.id),
       userName: phoneNumber,
       userDisplayName: displayName,
@@ -245,8 +205,6 @@ app.post('/api/register/options', async (req, res) => {
       type: 'reg',
       phoneNumber,
       challenge: options.challenge,
-      rpID: dynamicRpId,
-      origin: getRequestOrigin(req),
       exp: Date.now() + CHALLENGE_TOKEN_TTL_MS,
     });
 
@@ -268,9 +226,8 @@ app.post('/api/register/verify', async (req, res) => {
       return res.status(400).json({ error: 'Phone number and response required' });
     }
 
-    const dynamicRpId = getRpIdFromRequest(req);
-    let expectedRPID = dynamicRpId;
-    let expectedOrigin = buildAllowedWalletOrigins(req);
+    const expectedRPID = RP_ID;
+    const expectedOrigin = WALLET_ORIGIN;
     let expectedChallenge;
 
     if (verificationToken) {
@@ -283,10 +240,6 @@ app.post('/api/register/verify', async (req, res) => {
         return res.status(400).json({ error: 'Verification token does not match registration request' });
       }
       expectedChallenge = payload.challenge;
-      expectedRPID = payload.rpID || dynamicRpId;
-      if (payload.origin) {
-        expectedOrigin = payload.origin;
-      }
     } else {
       expectedChallenge = store.getChallenge(`reg:${phoneNumber}`);
       if (!expectedChallenge) {
@@ -333,10 +286,8 @@ app.post('/api/login/options', async (req, res) => {
       userCredentials = store.getCredentialsByPhoneNumber(phoneNumber);
     }
 
-    const dynamicRpId = getRpIdFromRequest(req);
-
     const options = await generateAuthenticationOptions({
-      rpID: dynamicRpId,
+      rpID: RP_ID,
       allowCredentials: userCredentials.map(c => ({
         id: c.id,
         type: 'public-key',
@@ -350,8 +301,6 @@ app.post('/api/login/options', async (req, res) => {
       type: 'auth',
       phoneNumber: phoneNumber || null,
       challenge: options.challenge,
-      rpID: dynamicRpId,
-      origin: getRequestOrigin(req),
       exp: Date.now() + CHALLENGE_TOKEN_TTL_MS,
     });
 
@@ -378,10 +327,9 @@ app.post('/api/login/verify', async (req, res) => {
       return res.status(400).json({ error: 'Credential not found' });
     }
 
-    const dynamicRpId = getRpIdFromRequest(req);
     let expectedChallenge;
-    let expectedRPID = dynamicRpId;
-    let expectedOrigin = buildAllowedWalletOrigins(req);
+    const expectedRPID = RP_ID;
+    const expectedOrigin = WALLET_ORIGIN;
     let tokenPhoneNumber = null;
 
     if (verificationToken) {
@@ -394,11 +342,7 @@ app.post('/api/login/verify', async (req, res) => {
         return res.status(400).json({ error: 'Invalid authentication token type' });
       }
       expectedChallenge = payload.challenge;
-      expectedRPID = payload.rpID || dynamicRpId;
       tokenPhoneNumber = payload.phoneNumber || null;
-      if (payload.origin) {
-        expectedOrigin = payload.origin;
-      }
       if (phoneNumber && tokenPhoneNumber && phoneNumber !== tokenPhoneNumber) {
         return res.status(400).json({ error: 'Verification token does not match phone number' });
       }

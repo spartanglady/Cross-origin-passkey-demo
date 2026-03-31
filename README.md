@@ -91,6 +91,7 @@ npm test
 3. Returning device-bound user without passkey: pay triggers OTP fallback.
 4. Returning device-bound user with passkey: cancelled passkey falls back to OTP.
 5. Returning user clicks **Change** and logs in as a different phone.
+6. WebAuthn options are pinned to the wallet RP ID (no merchant RP drift).
 
 ## Environment Variables
 
@@ -101,8 +102,16 @@ npm test
 
 ### Wallet app
 
-- `WALLET_URL`: wallet base URL used for RP host derivation
+- `WALLET_URL`: wallet base URL (used as default WebAuthn RP source)
+- `WEBAUTHN_RP_ID` (optional): explicit RP ID override (recommended in production)
+- `WEBAUTHN_ORIGIN` (optional): explicit expected WebAuthn origin override (recommended in production)
 - `MERCHANT_URL`: allowed merchant URL for demo configuration
+
+For production deployments, set wallet-side values in the **wallet Vercel project**:
+
+- `WALLET_URL=https://<wallet-domain>`
+- `WEBAUTHN_RP_ID=<wallet-domain-hostname>`
+- `WEBAUTHN_ORIGIN=https://<wallet-domain>`
 
 The Playwright config sets these automatically for local tests.
 
@@ -159,4 +168,3 @@ Cross-origin-passkey-demo/
 ## License
 
 MIT
-
