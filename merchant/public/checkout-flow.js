@@ -463,6 +463,7 @@ class PassWalletCheckout {
   // =========================================================
 
   _setupPaymentView(skipCVV = false) {
+    const preferredCardId = this.selectedCardId;
     this.skipCVV = skipCVV;
     this.cvvValue = '';
     this.selectedCardId = null;
@@ -491,7 +492,10 @@ class PassWalletCheckout {
       return;
     }
 
-    this.selectedCardId = this.user.cards[0].id;
+    const matchingCard = preferredCardId
+      ? this.user.cards.find((card) => card.id === preferredCardId)
+      : null;
+    this.selectedCardId = matchingCard ? matchingCard.id : this.user.cards[0].id;
     this._renderCards();
   }
 

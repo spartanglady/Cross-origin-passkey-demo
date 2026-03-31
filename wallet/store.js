@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 
 // In-memory stores
@@ -47,16 +48,30 @@ const CARD_TEMPLATES = [
   { brand: 'Amex', color1: '#006fcf', color2: '#00aeef', prefix: '3' },
 ];
 
-function generateMockCards(count = 2) {
+function hashSeed(seed) {
+  return crypto.createHash('sha256').update(String(seed)).digest('hex');
+}
+
+function stableNumber(seed, min, max) {
+  const span = max - min + 1;
+  return min + (parseInt(hashSeed(seed).slice(0, 8), 16) % span);
+}
+
+function defaultDisplayName(phoneNumber) {
+  return `User ${String(phoneNumber).slice(-4)}`;
+}
+
+function buildStableCards(phoneNumber, count = 2) {
   const cards = [];
-  const shuffled = [...CARD_TEMPLATES].sort(() => Math.random() - 0.5);
-  for (let i = 0; i < Math.min(count, shuffled.length); i++) {
-    const template = shuffled[i];
-    const last4 = String(Math.floor(1000 + Math.random() * 9000));
-    const expMonth = String(Math.floor(1 + Math.random() * 12)).padStart(2, '0');
-    const expYear = String(27 + Math.floor(Math.random() * 4));
+  const startIndex = stableNumber(`cards:start:${phoneNumber}`, 0, CARD_TEMPLATES.length - 1);
+
+  for (let i = 0; i < Math.min(count, CARD_TEMPLATES.length); i++) {
+    const template = CARD_TEMPLATES[(startIndex + i) % CARD_TEMPLATES.length];
+    const last4 = String(stableNumber(`cards:last4:${phoneNumber}:${template.brand}:${i}`, 1000, 9999));
+    const expMonth = String(stableNumber(`cards:month:${phoneNumber}:${template.brand}:${i}`, 1, 12)).padStart(2, '0');
+    const expYear = String(stableNumber(`cards:year:${phoneNumber}:${template.brand}:${i}`, 27, 30));
     cards.push({
-      id: uuidv4(),
+      id: `card_${hashSeed(`cards:id:${phoneNumber}:${template.brand}:${i}`).slice(0, 24)}`,
       brand: template.brand,
       last4,
       expiry: `${expMonth}/${expYear}`,
@@ -67,15 +82,31 @@ function generateMockCards(count = 2) {
   return cards;
 }
 
-function createUser(phoneNumber, displayName) {
-  const userId = uuidv4();
+function buildStableUser(phoneNumber, displayName, createdAt = new Date().toISOString()) {
   const user = {
-    id: userId,
+    id: `user_${hashSeed(`user:id:${phoneNumber}`).slice(0, 24)}`,
     phoneNumber,
-    displayName,
-    cards: generateMockCards(2),
-    createdAt: new Date().toISOString(),
+    displayName: displayName || defaultDisplayName(phoneNumber),
+    cards: buildStableCards(phoneNumber, 2),
+    createdAt,
   };
+  return user;
+}
+
+function generateMockCards(count = 2, phoneNumber = 'demo') {
+  return buildStableCards(phoneNumber, count);
+}
+
+function createUser(phoneNumber, displayName) {
+  const existing = store.users.get(phoneNumber);
+  if (existing) {
+    if (displayName && existing.displayName !== displayName) {
+      existing.displayName = displayName;
+    }
+    return existing;
+  }
+
+  const user = buildStableUser(phoneNumber, displayName);
   store.users.set(phoneNumber, user);
   return user;
 }
@@ -84,8 +115,14 @@ function saveUser(user) {
   if (!user || !user.phoneNumber) {
     throw new Error('Valid user with phoneNumber required');
   }
-  store.users.set(user.phoneNumber, user);
-  return user;
+  const existing = store.users.get(user.phoneNumber);
+  const normalized = buildStableUser(
+    user.phoneNumber,
+    user.displayName || existing?.displayName,
+    user.createdAt || existing?.createdAt || new Date().toISOString(),
+  );
+  store.users.set(user.phoneNumber, normalized);
+  return normalized;
 }
 
 function getUser(phoneNumber) {

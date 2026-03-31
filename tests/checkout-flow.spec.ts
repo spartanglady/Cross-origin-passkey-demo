@@ -135,6 +135,23 @@ test('wallet client log endpoint accepts browser diagnostics', async ({ request 
   await expect(res.json()).resolves.toEqual({ logged: true });
 });
 
+test('wallet users keep the same saved cards for a phone number', async () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const store = require('../wallet/store');
+  const phoneNumber = nextPhoneNumber();
+
+  const firstUser = store.createUser(phoneNumber, 'User Stable');
+  const normalizedUser = store.saveUser({
+    phoneNumber,
+    displayName: 'User Renamed',
+    cards: [{ id: 'bogus-card' }],
+  });
+
+  expect(normalizedUser.displayName).toBe('User Renamed');
+  expect(normalizedUser.cards).toEqual(firstUser.cards);
+  expect(normalizedUser.cards).toHaveLength(2);
+});
+
 test('real passkey registration and returning-user authentication succeed', async ({ page }) => {
   const phoneNumber = nextPhoneNumber();
   const bridgeWarnings: string[] = [];
@@ -253,6 +270,7 @@ test('phone-entry passkey attempt falls back to OTP when passkey auth is cancell
 test('returning WebCrypto user without passkey is prompted for OTP at pay time', async ({ page, request }) => {
   const phoneNumber = nextPhoneNumber();
   const user = await seedWalletUser(request, phoneNumber);
+  const secondCard = user.cards[1];
 
   await page.addInitScript(({ deviceId }) => {
     localStorage.setItem('pw_device_id', deviceId);
@@ -276,11 +294,13 @@ test('returning WebCrypto user without passkey is prompted for OTP at pay time',
   await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
   await expect(page.locator('#pw-pay-btn')).toHaveText('Pay Now');
   await expect(page.locator('#pw-cvv-input')).toHaveCount(0);
+  await page.locator(`.pw-card-wrapper[data-id="${secondCard.id}"] .pw-card-item`).click();
   await page.locator('#pw-pay-btn').click();
 
   await expect(page.locator('#pw-step-otp.pw-active')).toBeVisible();
   await enterOTP(page);
   await expectSuccess(page);
+  await expect(page.locator('#pw-conf-card')).toContainText(secondCard.last4);
 });
 
 test('returning WebCrypto user with passkey falls back to OTP when passkey auth is cancelled', async ({ page, request }) => {

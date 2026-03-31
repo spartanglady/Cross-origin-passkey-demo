@@ -303,8 +303,16 @@ app.post('/api/lookup', (req, res) => {
   const { phoneNumber } = req.body;
   if (!phoneNumber) return res.status(400).json({ error: 'Phone number required' });
 
-  const user = store.getUser(phoneNumber);
-  const hasPasskey = user ? store.getCredentialsByPhoneNumber(phoneNumber).length > 0 : false;
+  const credentialCount = store.getCredentialsByPhoneNumber(phoneNumber).length;
+  const hasPasskey = credentialCount > 0;
+  let user = store.getUser(phoneNumber);
+  if (!user && hasPasskey) {
+    user = store.createUser(phoneNumber, `User ${phoneNumber.slice(-4)}`);
+    logWalletEvent('warn', 'user_recreated_for_lookup', {
+      phoneNumber: maskPhoneNumber(phoneNumber),
+      credentialCount,
+    });
+  }
 
   if (user) {
     res.json({ exists: true, hasPasskey, displayName: user.displayName });
@@ -509,10 +517,17 @@ app.post('/api/login/options', async (req, res) => {
     let hasPasskeys = false;
 
     if (phoneNumber) {
-      const user = store.getUser(phoneNumber);
-      if (!user) return res.status(404).json({ error: 'User not found' });
       userCredentials = store.getCredentialsByPhoneNumber(phoneNumber);
       hasPasskeys = userCredentials.length > 0;
+      let user = store.getUser(phoneNumber);
+      if (!user && hasPasskeys) {
+        user = store.createUser(phoneNumber, `User ${phoneNumber.slice(-4)}`);
+        logWalletEvent('warn', 'user_recreated_for_auth_options', {
+          phoneNumber: maskPhoneNumber(phoneNumber),
+          credentialCount: userCredentials.length,
+        });
+      }
+      if (!user) return res.status(404).json({ error: 'User not found' });
     }
 
     const tokenCredentials = userCredentials
@@ -677,8 +692,14 @@ app.post('/api/pay', (req, res) => {
     return res.status(400).json({ error: 'phoneNumber, cardId, and amount required' });
   }
 
-  const user = store.getUser(phoneNumber);
-  if (!user) return res.status(404).json({ error: 'User not found' });
+  let user = store.getUser(phoneNumber);
+  if (!user) {
+    user = store.createUser(phoneNumber, `User ${phoneNumber.slice(-4)}`);
+    logWalletEvent('warn', 'user_recreated_for_payment', {
+      phoneNumber: maskPhoneNumber(phoneNumber),
+      cardId,
+    });
+  }
 
   const card = user.cards.find(c => c.id === cardId);
   if (!card) {
@@ -768,8 +789,14 @@ app.post('/api/device/verify', async (req, res) => {
   const binding = store.getDeviceBinding(deviceId);
   if (!binding) return res.status(404).json({ error: 'Device binding not found' });
 
-  const user = store.getUser(binding.phoneNumber);
-  if (!user) return res.status(404).json({ error: 'Associated user not found' });
+  let user = store.getUser(binding.phoneNumber);
+  if (!user) {
+    user = store.createUser(binding.phoneNumber, `User ${binding.phoneNumber.slice(-4)}`);
+    logWalletEvent('warn', 'user_recreated_for_device_verify', {
+      deviceId,
+      phoneNumber: maskPhoneNumber(binding.phoneNumber),
+    });
+  }
 
   // Assuming signature is valid for demo
   const hasPasskey = store.getCredentialsByPhoneNumber(binding.phoneNumber).length > 0;
