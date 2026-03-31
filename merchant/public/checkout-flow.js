@@ -55,6 +55,31 @@ class PassWalletCheckout {
     return { options: data, verificationToken: null };
   }
 
+  _maskPhoneNumber(phoneNumber = this.phoneNumber) {
+    const digits = String(phoneNumber || '').replace(/\D/g, '');
+    if (!digits) return null;
+    return `***${digits.slice(-4)}`;
+  }
+
+  _logClientEvent(eventName, details = {}, level = 'info') {
+    const sdk = window.PassWallet;
+    if (!sdk || typeof sdk.logClientEvent !== 'function') return;
+    void sdk.logClientEvent(eventName, {
+      currentStep: this.currentStep,
+      flowMode: this.flowMode,
+      phoneNumber: this._maskPhoneNumber(),
+      ...details,
+    }, level, 'merchant-checkout');
+  }
+
+  _logClientError(eventName, error, details = {}) {
+    this._logClientEvent(eventName, {
+      errorName: error && error.name ? error.name : 'Error',
+      errorMessage: error && error.message ? error.message : String(error),
+      ...details,
+    }, 'error');
+  }
+
   // =========================================================
   // Initialization
   // =========================================================
@@ -81,6 +106,7 @@ class PassWalletCheckout {
       await sdk.init(bodySlot);
     } catch (err) {
       console.warn('Bridge init warning:', err.message);
+      this._logClientError('bridge_init_warning', err);
     }
 
     // Set amount display
@@ -366,6 +392,9 @@ class PassWalletCheckout {
       sdk.hidePasskeyButton();
       phoneLoading.style.display = 'none';
       phoneBtn.disabled = false;
+      this._logClientError('phone_step_passkey_auth_failed', err, {
+        hasPasskey: this.hasPasskey,
+      });
 
       if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
         // Passkey cancelled, fall back to OTP
@@ -402,7 +431,14 @@ class PassWalletCheckout {
       this.user = data.user;
 
       if (this.flowMode === 'WEBCRYPTO_OTP_FALLBACK') {
-        // WebCrypto returning user who failed passkey — payment satisfied
+        // WebCrypto returning user who failed passkey — refresh the selected
+        // card from the OTP-verified user before auto-paying.
+        this._setupPaymentView(true);
+        if (!this.selectedCardId) {
+          this.navigateTo('pw-step-payment');
+          this._showError('No saved card found for this account.');
+          return;
+        }
         await this._processPayment(flowEpoch);
       } else {
         // Normal INITIAL flow — need CVV
@@ -413,6 +449,7 @@ class PassWalletCheckout {
       if (!this._isCurrentFlow(flowEpoch)) return;
       errEl.textContent = err.message || 'Verification failed. Please try again.';
       errEl.style.display = 'block';
+      this._logClientError('otp_verify_failed', err);
     } finally {
       if (!this._isCurrentFlow(flowEpoch)) return;
       this._otpSubmitting = false;
@@ -428,6 +465,7 @@ class PassWalletCheckout {
   _setupPaymentView(skipCVV = false) {
     this.skipCVV = skipCVV;
     this.cvvValue = '';
+    this.selectedCardId = null;
 
     const phoneDisplay = document.getElementById('pw-display-phone');
     const avatar = document.getElementById('pw-user-avatar');
@@ -600,6 +638,9 @@ class PassWalletCheckout {
           payBtn.style.display = '';
           payBtn.disabled = false;
           payBtn.textContent = 'Pay Now';
+          this._logClientError('returning_user_passkey_auth_failed', err, {
+            hasPasskey: this.hasPasskey,
+          });
 
           if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
             this._showError('Passkey verification failed. Continue with OTP.');
@@ -671,6 +712,9 @@ class PassWalletCheckout {
       if (!this._isCurrentFlow(flowEpoch)) return;
       sdk.hidePasskeyButton();
       loadingEl.style.display = 'none';
+      this._logClientError('passkey_registration_failed', err, {
+        hasPasskey: this.hasPasskey,
+      });
 
       if (err.name === 'AbortError') {
         // Aborted by "Not now" — processPayment already called from skip handler
@@ -721,6 +765,9 @@ class PassWalletCheckout {
       if (!this._isCurrentFlow(flowEpoch)) return;
       processingText.textContent = 'Payment failed';
       this._showError(err.message);
+      this._logClientError('payment_failed', err, {
+        selectedCardId: this.selectedCardId,
+      });
       this.navigateTo('pw-step-payment');
     } finally {
       this._paymentInProgress = false;
@@ -781,6 +828,7 @@ class PassWalletCheckout {
       }
     } catch (err) {
       console.warn('WebCrypto login failed', err);
+      this._logClientError('device_binding_login_failed', err);
       // If 404, clear stale keys
       if (err.status === 404) {
         localStorage.removeItem('pw_device_id');

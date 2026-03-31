@@ -12,6 +12,76 @@
 
   let pendingOperation = null; // { type, requestId, options }
 
+  function serializeError(error) {
+    if (!error) return null;
+    if (error instanceof Error) {
+      return {
+        name: error.name,
+        message: error.message,
+        stack: error.stack ? error.stack.split('\n').slice(0, 3).join('\n') : undefined,
+      };
+    }
+    if (typeof error === 'object') {
+      const out = {};
+      for (const [key, value] of Object.entries(error).slice(0, 10)) {
+        out[key] = value;
+      }
+      return out;
+    }
+    return { message: String(error) };
+  }
+
+  function sendClientLog(level, event, details = {}) {
+    const payload = {
+      level,
+      source: 'passkey-bridge',
+      event,
+      details,
+      page: {
+        origin: window.location.origin,
+        href: window.location.href,
+        userAgent: navigator.userAgent,
+      },
+      timestamp: new Date().toISOString(),
+    };
+
+    try {
+      const body = JSON.stringify(payload);
+      if (navigator.sendBeacon) {
+        const sent = navigator.sendBeacon(
+          '/api/client-log',
+          new Blob([body], { type: 'application/json' }),
+        );
+        if (sent) return;
+      }
+
+      fetch('/api/client-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true,
+      }).catch((error) => console.warn('[PassWallet Bridge] Failed to send log', error));
+    } catch (error) {
+      console.warn('[PassWallet Bridge] Failed to queue log', error);
+    }
+  }
+
+  window.addEventListener('error', (event) => {
+    sendClientLog('error', 'window_error', {
+      message: event.message,
+      filename: event.filename,
+      lineno: event.lineno,
+      colno: event.colno,
+      error: serializeError(event.error),
+    });
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    sendClientLog('error', 'unhandled_rejection', {
+      reason: serializeError(event.reason),
+    });
+  });
+
   // --- PostMessage helpers ---
   function postToParent(msg) {
     window.parent.postMessage(msg, '*');
@@ -27,6 +97,14 @@
     switch (type) {
       case 'PASSKEY_AUTH_REQUEST':
         pendingOperation = { type: 'auth', requestId, options: payload.options };
+        sendClientLog('info', 'passkey_request_received', {
+          type: 'auth',
+          requestId,
+          rpId: payload && payload.options ? payload.options.rpId : null,
+          allowCredentialCount: Array.isArray(payload?.options?.allowCredentials)
+            ? payload.options.allowCredentials.length
+            : 0,
+        });
         label.textContent = 'Verify with PassWallet';
         btn.style.display = 'flex';
         btn.disabled = false;
@@ -34,6 +112,11 @@
 
       case 'PASSKEY_REGISTER_REQUEST':
         pendingOperation = { type: 'register', requestId, options: payload.options };
+        sendClientLog('info', 'passkey_request_received', {
+          type: 'register',
+          requestId,
+          rpId: payload && payload.options ? (payload.options.rp?.id || payload.options.rpId || null) : null,
+        });
         label.textContent = 'Save Passkey';
         btn.style.display = 'flex';
         btn.disabled = false;
@@ -65,6 +148,11 @@
       let result;
       if (type === 'auth') {
         result = await startAuthentication(options);
+        sendClientLog('info', 'passkey_operation_succeeded', {
+          type,
+          requestId,
+          credentialId: result && result.id ? result.id : null,
+        });
         postToParent({
           type: 'PASSKEY_AUTH_RESPONSE',
           requestId,
@@ -72,6 +160,11 @@
         });
       } else if (type === 'register') {
         result = await startRegistration(options);
+        sendClientLog('info', 'passkey_operation_succeeded', {
+          type,
+          requestId,
+          credentialId: result && result.id ? result.id : null,
+        });
         postToParent({
           type: 'PASSKEY_REGISTER_RESPONSE',
           requestId,
@@ -79,6 +172,12 @@
         });
       }
     } catch (err) {
+      sendClientLog('error', 'passkey_operation_failed', {
+        type,
+        requestId,
+        rpId: options ? (options.rp?.id || options.rpId || null) : null,
+        error: serializeError(err),
+      });
       const responseType = type === 'auth' ? 'PASSKEY_AUTH_RESPONSE' : 'PASSKEY_REGISTER_RESPONSE';
       postToParent({
         type: responseType,

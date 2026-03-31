@@ -80,6 +80,29 @@ test('WebAuthn options are pinned to the wallet RP ID', async ({ request }) => {
   expect(authenticationRpId).toBe('localhost');
 });
 
+test('wallet client log endpoint accepts browser diagnostics', async ({ request }) => {
+  const res = await request.post(`${WALLET_ORIGIN}/api/client-log`, {
+    data: {
+      level: 'error',
+      source: 'playwright',
+      event: 'browser_error',
+      message: 'Synthetic browser error',
+      details: {
+        errorName: 'SyntheticError',
+        errorMessage: 'Something went wrong',
+      },
+      page: {
+        origin: MERCHANT_ORIGIN,
+        href: `${MERCHANT_ORIGIN}/checkout`,
+      },
+      timestamp: new Date().toISOString(),
+    },
+  });
+
+  expect(res.ok()).toBeTruthy();
+  await expect(res.json()).resolves.toEqual({ logged: true });
+});
+
 test('first-time user completes OTP + CVV flow and skips passkey registration', async ({ page }) => {
   const phoneNumber = nextPhoneNumber();
 
@@ -221,6 +244,94 @@ test('returning WebCrypto user with passkey falls back to OTP when passkey auth 
   await expect(page.locator('#pw-pay-btn')).toHaveText('Pay Now');
   await page.locator('#pw-pay-btn').click();
   await expect(page.locator('#pw-step-otp.pw-active')).toBeVisible();
+});
+
+test('OTP fallback refreshes the selected card after a passkey failure', async ({ page, request }) => {
+  const phoneNumber = nextPhoneNumber();
+  const user = await seedWalletUser(request, phoneNumber);
+  const refreshedUser = {
+    ...user,
+    cards: [
+      {
+        id: 'refreshed-card-id',
+        brand: 'Visa',
+        last4: '9999',
+        expiry: '09/29',
+        color1: '#1a1f71',
+        color2: '#2557d6',
+      },
+    ],
+  };
+
+  await page.addInitScript(({ deviceId }) => {
+    localStorage.setItem('pw_device_id', deviceId);
+    localStorage.setItem('pw_mock_key', 'mock-webcrypto-public-key');
+  }, { deviceId: `dev_${phoneNumber}` });
+
+  await openMerchant(page);
+  await waitForSDK(page);
+  await page.evaluate(({ returningUser, verifiedUser }) => {
+    const sdk = (window as any).PassWallet;
+    const originalWalletFetch = sdk._walletFetch.bind(sdk);
+
+    sdk.challengeDevice = async () => ({ challenge: 'test-challenge' });
+    sdk.verifyDevice = async () => ({
+      verified: true,
+      hasPasskey: true,
+      user: returningUser,
+    });
+    sdk._walletFetch = async (path: string, body: unknown) => {
+      if (path === '/api/login/options') {
+        return {
+          options: {
+            challenge: 'test-challenge',
+            rpId: 'localhost',
+            userVerification: 'preferred',
+          },
+          sessionId: 'session-1',
+          verificationToken: 'token-1',
+          hasPasskeys: true,
+        };
+      }
+      return originalWalletFetch(path, body);
+    };
+    sdk._postToBridge = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const err = new Error('Simulated passkey verification failure');
+      (err as any).name = 'UnknownError';
+      throw err;
+    };
+    sdk.verifyOTP = async () => ({
+      verified: true,
+      user: verifiedUser,
+    });
+    sdk.pay = async (_phone: string, cardId: string, amount: string) => {
+      (window as any).__lastPayCardId = cardId;
+      if (cardId !== verifiedUser.cards[0].id) {
+        throw new Error('Card not found');
+      }
+      return {
+        success: true,
+        amount,
+        cardBrand: verifiedUser.cards[0].brand,
+        last4: verifiedUser.cards[0].last4,
+        transactionId: 'TXN-REFRESHED-CARD',
+      };
+    };
+  }, { returningUser: user, verifiedUser: refreshedUser });
+
+  await addItemAndStartCheckout(page);
+
+  await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
+  await expect(page.locator('#pw-pay-btn')).toHaveText('Pay Now');
+  await page.locator('#pw-pay-btn').click();
+  await expect(page.locator('#pw-step-otp.pw-active')).toBeVisible();
+
+  await enterOTP(page);
+  await expectSuccess(page);
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__lastPayCardId);
+  }).toBe(refreshedUser.cards[0].id);
 });
 
 test('returning WebCrypto user with passkey can switch to OTP when passkey auth fails', async ({ page, request }) => {

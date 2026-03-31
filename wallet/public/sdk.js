@@ -20,6 +20,8 @@
       this._pendingRequests = new Map(); // requestId -> { resolve, reject, timer }
       this._messageHandler = this._handleMessage.bind(this);
       this._requestCounter = 0;
+      this._errorHandlersInstalled = false;
+      this._installGlobalErrorHandlers();
     }
 
     // =========================================================
@@ -255,26 +257,161 @@
       return this._walletFetch('/api/device/register', { deviceId, phoneNumber, publicKey });
     }
 
+    _maskPhoneNumber(phoneNumber) {
+      const digits = String(phoneNumber || '').replace(/\D/g, '');
+      if (!digits) return null;
+      return `***${digits.slice(-4)}`;
+    }
+
+    _sanitizeLogValue(value, key = '', depth = 0) {
+      if (value == null) return value;
+      if (depth > 3) return '[truncated]';
+
+      const lowerKey = key.toLowerCase();
+      if (lowerKey.includes('phone')) {
+        return this._maskPhoneNumber(value);
+      }
+      if (
+        lowerKey.includes('otp')
+        || lowerKey.includes('token')
+        || lowerKey.includes('challenge')
+        || lowerKey.includes('publickey')
+      ) {
+        return '[redacted]';
+      }
+      if (typeof value === 'string') {
+        return value.length > 300 ? `${value.slice(0, 300)}...[truncated]` : value;
+      }
+      if (typeof value === 'number' || typeof value === 'boolean') return value;
+      if (Array.isArray(value)) {
+        return value.slice(0, 10).map((entry) => this._sanitizeLogValue(entry, key, depth + 1));
+      }
+      if (typeof value === 'object') {
+        const out = {};
+        for (const [entryKey, entryValue] of Object.entries(value).slice(0, 20)) {
+          out[entryKey] = this._sanitizeLogValue(entryValue, entryKey, depth + 1);
+        }
+        return out;
+      }
+      return String(value);
+    }
+
+    async logClientEvent(event, details = {}, level = 'info', source = 'merchant-sdk') {
+      const payload = {
+        level,
+        source,
+        event,
+        details: this._sanitizeLogValue(details),
+        page: {
+          origin: window.location.origin,
+          href: window.location.href,
+          userAgent: navigator.userAgent,
+        },
+        timestamp: new Date().toISOString(),
+      };
+
+      try {
+        const body = JSON.stringify(payload);
+        if (navigator.sendBeacon) {
+          const sent = navigator.sendBeacon(
+            `${WALLET_ORIGIN}/api/client-log`,
+            new Blob([body], { type: 'application/json' }),
+          );
+          if (sent) return;
+        }
+
+        await fetch(`${WALLET_ORIGIN}/api/client-log`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+          keepalive: true,
+        });
+      } catch (err) {
+        console.warn('[PassWallet] Failed to send client log', err);
+      }
+    }
+
+    _serializeError(error) {
+      if (!error) return null;
+      if (error instanceof Error) {
+        return {
+          name: error.name,
+          message: error.message,
+          stack: error.stack ? error.stack.split('\n').slice(0, 3).join('\n') : undefined,
+        };
+      }
+      if (typeof error === 'object') {
+        const out = {};
+        for (const [key, value] of Object.entries(error).slice(0, 10)) {
+          out[key] = typeof value === 'string' && value.length > 300
+            ? `${value.slice(0, 300)}...[truncated]`
+            : value;
+        }
+        return out;
+      }
+      return { message: String(error) };
+    }
+
+    _installGlobalErrorHandlers() {
+      if (this._errorHandlersInstalled) return;
+      this._errorHandlersInstalled = true;
+
+      window.addEventListener('error', (event) => {
+        void this.logClientEvent('window_error', {
+          message: event.message,
+          filename: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+          error: this._serializeError(event.error),
+        }, 'error', 'merchant-window');
+      });
+
+      window.addEventListener('unhandledrejection', (event) => {
+        void this.logClientEvent('unhandled_rejection', {
+          reason: this._serializeError(event.reason),
+        }, 'error', 'merchant-window');
+      });
+    }
+
     // =========================================================
     // Internal: Fetch wrapper
     // =========================================================
 
     async _walletFetch(path, body) {
-      const res = await fetch(`${WALLET_ORIGIN}${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      try {
+        const res = await fetch(`${WALLET_ORIGIN}${path}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
 
-      const data = await res.json();
+        const data = await res.json();
 
-      if (!res.ok) {
-        const err = new Error(data.error || `Request failed: ${res.status}`);
-        err.status = res.status;
-        throw err;
+        if (!res.ok) {
+          const err = new Error(data.error || `Request failed: ${res.status}`);
+          err.status = res.status;
+          if (path !== '/api/client-log') {
+            void this.logClientEvent('wallet_fetch_error', {
+              path,
+              status: res.status,
+              requestBody: body,
+              responseBody: data,
+            }, 'error');
+          }
+          throw err;
+        }
+
+        return data;
+      } catch (error) {
+        if (path !== '/api/client-log') {
+          void this.logClientEvent('wallet_fetch_exception', {
+            path,
+            requestBody: body,
+            error: this._serializeError(error),
+          }, 'error');
+        }
+        throw error;
       }
-
-      return data;
     }
 
     // =========================================================
@@ -300,6 +437,11 @@
 
         const timer = setTimeout(() => {
           this._pendingRequests.delete(requestId);
+          void this.logClientEvent('bridge_request_timeout', {
+            requestType: type,
+            requestId,
+            payload,
+          }, 'error', 'bridge-rpc');
           reject(new Error('Bridge request timeout'));
         }, timeoutMs);
 
@@ -347,6 +489,10 @@
           if (pending.retryTimers) pending.retryTimers.forEach(clearTimeout);
 
           if (error) {
+            void this.logClientEvent('bridge_response_error', {
+              requestType: type,
+              error,
+            }, 'error', 'bridge-rpc');
             const err = new Error(error.message);
             err.name = error.name;
             pending.reject(err);

@@ -29,6 +29,60 @@ const DEMO_OTP = process.env.DEMO_OTP || '111111';
 const CHALLENGE_TOKEN_TTL_MS = 5 * 60 * 1000;
 const CHALLENGE_TOKEN_SECRET = process.env.CHALLENGE_TOKEN_SECRET || process.env.WALLET_URL || 'passwallet-demo-secret';
 
+function maskPhoneNumber(phoneNumber) {
+  const digits = String(phoneNumber || '').replace(/\D/g, '');
+  if (!digits) return null;
+  return `***${digits.slice(-4)}`;
+}
+
+function summarizeId(id) {
+  const normalized = normalizeCredentialId(id);
+  if (!normalized) return null;
+  if (normalized.length <= 12) return normalized;
+  return `${normalized.slice(0, 6)}...${normalized.slice(-6)}`;
+}
+
+function sanitizeLogValue(value, depth = 0) {
+  if (value == null) return value;
+  if (depth > 3) return '[truncated]';
+  if (typeof value === 'string') {
+    return value.length > 400 ? `${value.slice(0, 400)}...[truncated]` : value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack ? value.stack.split('\n').slice(0, 3).join('\n') : undefined,
+    };
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 10).map((entry) => sanitizeLogValue(entry, depth + 1));
+  }
+  if (typeof value === 'object') {
+    const out = {};
+    for (const [key, entry] of Object.entries(value).slice(0, 20)) {
+      out[key] = sanitizeLogValue(entry, depth + 1);
+    }
+    return out;
+  }
+  return String(value);
+}
+
+function logWalletEvent(level, event, details = {}) {
+  const method = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
+  method(`[PassWallet][${event}] ${JSON.stringify(sanitizeLogValue(details))}`);
+}
+
+function requestLogContext(req) {
+  return {
+    origin: req.get('origin') || null,
+    referer: req.get('referer') || null,
+    userAgent: req.get('user-agent') || null,
+    forwardedFor: req.get('x-forwarded-for') || null,
+  };
+}
+
 function normalizeCredentialId(id) {
   if (!id) return '';
 
@@ -174,7 +228,7 @@ function verifyChallengeToken(token) {
 }
 
 function respondWebAuthnError(res, context, error) {
-  console.error(context, error);
+  logWalletEvent('error', 'webauthn_error', { context, error });
   const message = error && error.message ? error.message : context;
   const lower = String(message).toLowerCase();
   const isClientError = lower.includes('challenge')
@@ -265,6 +319,12 @@ app.post('/api/auth/otp/verify', (req, res) => {
     user = store.createUser(phoneNumber, `User ${phoneNumber.slice(-4)}`);
   }
 
+  logWalletEvent('info', 'otp_verify_success', {
+    phoneNumber: maskPhoneNumber(phoneNumber),
+    cardCount: Array.isArray(user.cards) ? user.cards.length : 0,
+    request: requestLogContext(req),
+  });
+
   res.json({
     verified: true,
     user: { displayName: user.displayName, cards: user.cards }
@@ -287,6 +347,12 @@ app.post('/api/register/options', async (req, res) => {
     }
 
     const existingCredentials = store.getCredentialsByPhoneNumber(phoneNumber);
+    logWalletEvent('info', 'passkey_register_options', {
+      phoneNumber: maskPhoneNumber(phoneNumber),
+      rpId: RP_ID,
+      existingCredentialCount: existingCredentials.length,
+      request: requestLogContext(req),
+    });
 
     const options = await generateRegistrationOptions({
       rpName: RP_NAME,
@@ -318,7 +384,7 @@ app.post('/api/register/options', async (req, res) => {
 
     res.json({ options, verificationToken });
   } catch (error) {
-    console.error('Registration options error:', error);
+    logWalletEvent('error', 'passkey_register_options_error', { error, request: requestLogContext(req) });
     res.status(500).json({ error: 'Failed to generate registration options' });
   }
 });
@@ -334,6 +400,14 @@ app.post('/api/register/verify', async (req, res) => {
     const expectedRPID = RP_ID;
     const expectedOrigin = WALLET_ORIGIN;
     let expectedChallenge;
+
+    logWalletEvent('info', 'passkey_register_verify_attempt', {
+      phoneNumber: maskPhoneNumber(phoneNumber),
+      credentialId: summarizeId(response && response.id),
+      expectedOrigin,
+      expectedRPID,
+      request: requestLogContext(req),
+    });
 
     if (verificationToken) {
       const tokenResult = verifyChallengeToken(verificationToken);
@@ -370,8 +444,18 @@ app.post('/api/register/verify', async (req, res) => {
       });
 
       const user = store.getUser(phoneNumber);
+      logWalletEvent('info', 'passkey_register_verify_success', {
+        phoneNumber: maskPhoneNumber(phoneNumber),
+        credentialId: summarizeId(credential.id),
+        counter: credential.counter,
+        transports: response.response.transports || [],
+      });
       res.json({ verified: true, user: { displayName: user.displayName, cards: user.cards } });
     } else {
+      logWalletEvent('warn', 'passkey_register_verify_rejected', {
+        phoneNumber: maskPhoneNumber(phoneNumber),
+        credentialId: summarizeId(response && response.id),
+      });
       res.status(400).json({ verified: false, error: 'Verification failed' });
     }
   } catch (error) {
@@ -414,6 +498,15 @@ app.post('/api/login/options', async (req, res) => {
       delete options.allowCredentials;
     }
 
+    logWalletEvent('info', 'passkey_auth_options', {
+      phoneNumber: maskPhoneNumber(phoneNumber),
+      rpId: RP_ID,
+      hasPasskeys,
+      credentialCount: userCredentials.length,
+      allowCredentialsIncluded: Array.isArray(options.allowCredentials),
+      request: requestLogContext(req),
+    });
+
     const sessionId = phoneNumber || Math.random().toString(36).slice(2);
     const verificationToken = signChallengeToken({
       type: 'auth',
@@ -428,7 +521,7 @@ app.post('/api/login/options', async (req, res) => {
 
     res.json({ options, sessionId, verificationToken, hasPasskeys });
   } catch (error) {
-    console.error('Login options error:', error);
+    logWalletEvent('error', 'passkey_auth_options_error', { error, request: requestLogContext(req) });
     res.status(500).json({ error: 'Failed to generate authentication options' });
   }
 });
@@ -446,6 +539,15 @@ app.post('/api/login/verify', async (req, res) => {
     const expectedOrigin = WALLET_ORIGIN;
     let tokenPhoneNumber = null;
     let tokenCredentials = [];
+
+    logWalletEvent('info', 'passkey_auth_verify_attempt', {
+      phoneNumber: maskPhoneNumber(phoneNumber),
+      sessionId: sessionId || null,
+      credentialId: summarizeId(response && response.id),
+      expectedOrigin,
+      expectedRPID,
+      request: requestLogContext(req),
+    });
 
     if (verificationToken) {
       const tokenResult = verifyChallengeToken(verificationToken);
@@ -478,6 +580,11 @@ app.post('/api/login/verify', async (req, res) => {
       credential = tokenCredentials.find(c => c.id === responseCredentialId) || null;
     }
     if (!credential) {
+      logWalletEvent('warn', 'passkey_auth_verify_missing_credential', {
+        phoneNumber: maskPhoneNumber(phoneNumber || tokenPhoneNumber),
+        credentialId: summarizeId(responseCredentialId || response.id),
+        tokenCredentialCount: tokenCredentials.length,
+      });
       return res.status(400).json({ error: 'Credential not found. Use OTP instead.' });
     }
 
@@ -504,8 +611,17 @@ app.post('/api/login/verify', async (req, res) => {
 
     if (verification.verified) {
       store.updateCredentialCounter(responseCredentialId || response.id, verification.authenticationInfo.newCounter);
+      logWalletEvent('info', 'passkey_auth_verify_success', {
+        phoneNumber: maskPhoneNumber(targetPhoneNumber),
+        credentialId: summarizeId(responseCredentialId || response.id),
+        newCounter: verification.authenticationInfo.newCounter,
+      });
       res.json({ verified: true, user: { phoneNumber: user.phoneNumber, displayName: user.displayName, cards: user.cards } });
     } else {
+      logWalletEvent('warn', 'passkey_auth_verify_rejected', {
+        phoneNumber: maskPhoneNumber(targetPhoneNumber),
+        credentialId: summarizeId(responseCredentialId || response.id),
+      });
       res.status(400).json({ verified: false, error: 'Authentication failed' });
     }
   } catch (error) {
@@ -524,7 +640,15 @@ app.post('/api/pay', (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   const card = user.cards.find(c => c.id === cardId);
-  if (!card) return res.status(404).json({ error: 'Card not found' });
+  if (!card) {
+    logWalletEvent('warn', 'payment_card_not_found', {
+      phoneNumber: maskPhoneNumber(phoneNumber),
+      cardId,
+      knownCardIds: Array.isArray(user.cards) ? user.cards.map((entry) => entry.id) : [],
+      request: requestLogContext(req),
+    });
+    return res.status(404).json({ error: 'Card not found' });
+  }
 
   // Simulate payment processing
   const transactionId = 'TXN-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -536,6 +660,28 @@ app.post('/api/pay', (req, res) => {
     cardBrand: card.brand,
     amount,
   });
+});
+
+app.post('/api/client-log', (req, res) => {
+  const {
+    level = 'info',
+    source = 'unknown',
+    event = 'client_log',
+    message = null,
+    details = {},
+    page = {},
+    timestamp = null,
+  } = req.body || {};
+
+  logWalletEvent(level, `client:${source}:${event}`, {
+    message,
+    details,
+    page,
+    timestamp,
+    request: requestLogContext(req),
+  });
+
+  res.json({ logged: true });
 });
 
 // --- WebCrypto endpoints ---
@@ -586,6 +732,13 @@ app.post('/api/device/verify', async (req, res) => {
 
   // Assuming signature is valid for demo
   const hasPasskey = store.getCredentialsByPhoneNumber(binding.phoneNumber).length > 0;
+
+  logWalletEvent('info', 'device_verify_success', {
+    deviceId,
+    phoneNumber: maskPhoneNumber(binding.phoneNumber),
+    hasPasskey,
+    request: requestLogContext(req),
+  });
 
   res.json({
     verified: true,
