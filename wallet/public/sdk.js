@@ -11,6 +11,9 @@
     || (location.hostname === 'localhost' || location.hostname.endsWith('.localhost')
         ? 'http://wallet.localhost:3001'
         : '');
+  const USER_HINTS_STORAGE_KEY = 'pw_user_hints_v1';
+  const CREDENTIAL_HINTS_STORAGE_KEY = 'pw_credential_hints_v1';
+  const BOUND_PHONE_STORAGE_KEY = 'pw_bound_phone';
 
   class PassWalletSDK {
     constructor() {
@@ -245,16 +248,166 @@
       return localStorage.getItem('pw_device_id');
     }
 
+    getBoundPhoneNumber() {
+      return localStorage.getItem(BOUND_PHONE_STORAGE_KEY);
+    }
+
+    clearDeviceState() {
+      localStorage.removeItem('pw_device_id');
+      localStorage.removeItem('pw_mock_key');
+      localStorage.removeItem(BOUND_PHONE_STORAGE_KEY);
+      this._pendingDeviceVerificationToken = null;
+    }
+
     async challengeDevice(deviceId) {
-      return this._walletFetch('/api/device/challenge', { deviceId });
+      const data = await this._walletFetch('/api/device/challenge', { deviceId });
+      this._pendingDeviceVerificationToken = data && data.verificationToken ? data.verificationToken : null;
+      return data;
     }
 
     async verifyDevice(deviceId, signature) {
-      return this._walletFetch('/api/device/verify', { deviceId, signature });
+      try {
+        return await this._walletFetch('/api/device/verify', { deviceId, signature });
+      } finally {
+        this._pendingDeviceVerificationToken = null;
+      }
     }
 
     async registerDevice(deviceId, phoneNumber, publicKey) {
       return this._walletFetch('/api/device/register', { deviceId, phoneNumber, publicKey });
+    }
+
+    _readStorageJSON(key) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (_) {
+        return {};
+      }
+    }
+
+    _writeStorageJSON(key, value) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch (_) {
+        // Ignore storage failures in demo mode
+      }
+    }
+
+    _getUserHint(phoneNumber) {
+      if (!phoneNumber) return null;
+      const cache = this._readStorageJSON(USER_HINTS_STORAGE_KEY);
+      const hint = cache[phoneNumber];
+      return hint && hint.phoneNumber === phoneNumber ? hint : null;
+    }
+
+    _cacheUserHint(phoneNumber, user) {
+      const normalizedPhone = phoneNumber || user?.phoneNumber;
+      if (!normalizedPhone || !user) return;
+
+      const cache = this._readStorageJSON(USER_HINTS_STORAGE_KEY);
+      cache[normalizedPhone] = {
+        phoneNumber: normalizedPhone,
+        displayName: user.displayName || null,
+        cards: Array.isArray(user.cards) ? user.cards : [],
+      };
+      this._writeStorageJSON(USER_HINTS_STORAGE_KEY, cache);
+    }
+
+    _getCredentialHints(phoneNumber) {
+      if (!phoneNumber) return [];
+      const cache = this._readStorageJSON(CREDENTIAL_HINTS_STORAGE_KEY);
+      const hints = cache[phoneNumber];
+      return Array.isArray(hints) ? hints : [];
+    }
+
+    _cacheCredentialHint(phoneNumber, credentialRecord) {
+      const normalizedPhone = phoneNumber || credentialRecord?.phoneNumber;
+      if (!normalizedPhone || !credentialRecord || !credentialRecord.id || !credentialRecord.publicKey) return;
+
+      const cache = this._readStorageJSON(CREDENTIAL_HINTS_STORAGE_KEY);
+      const existing = Array.isArray(cache[normalizedPhone]) ? cache[normalizedPhone] : [];
+      const next = existing.filter((entry) => entry && entry.id !== credentialRecord.id);
+      next.push({
+        id: credentialRecord.id,
+        publicKey: credentialRecord.publicKey,
+        counter: Number(credentialRecord.counter) || 0,
+        transports: Array.isArray(credentialRecord.transports) ? credentialRecord.transports : [],
+        phoneNumber: normalizedPhone,
+      });
+      cache[normalizedPhone] = next;
+      this._writeStorageJSON(CREDENTIAL_HINTS_STORAGE_KEY, cache);
+    }
+
+    _prepareWalletRequest(path, body) {
+      const payload = body && typeof body === 'object' ? { ...body } : {};
+      const phoneNumber = payload.phoneNumber || this.getBoundPhoneNumber() || null;
+
+      if (path === '/api/lookup' || path === '/api/login/options') {
+        if (phoneNumber && !payload.userHint) {
+          payload.userHint = this._getUserHint(phoneNumber);
+        }
+        if (phoneNumber && !payload.credentialHints) {
+          payload.credentialHints = this._getCredentialHints(phoneNumber);
+        }
+      }
+
+      if (path === '/api/device/challenge' && phoneNumber && !payload.phoneNumber) {
+        payload.phoneNumber = phoneNumber;
+      }
+
+      if (path === '/api/device/verify') {
+        if (this._pendingDeviceVerificationToken && !payload.verificationToken) {
+          payload.verificationToken = this._pendingDeviceVerificationToken;
+        }
+        if (phoneNumber && !payload.phoneNumber) {
+          payload.phoneNumber = phoneNumber;
+        }
+        if (!payload.publicKey) {
+          payload.publicKey = localStorage.getItem('pw_mock_key') || null;
+        }
+        if (phoneNumber && !payload.userHint) {
+          payload.userHint = this._getUserHint(phoneNumber);
+        }
+        if (phoneNumber && !payload.credentialHints) {
+          payload.credentialHints = this._getCredentialHints(phoneNumber);
+        }
+      }
+
+      return payload;
+    }
+
+    _cacheWalletResponse(path, requestBody, data) {
+      if (!data || typeof data !== 'object') return;
+
+      if (path === '/api/device/register' && requestBody?.phoneNumber) {
+        localStorage.setItem(BOUND_PHONE_STORAGE_KEY, requestBody.phoneNumber);
+      }
+
+      if (path === '/api/device/challenge' && data.verificationToken) {
+        this._pendingDeviceVerificationToken = data.verificationToken;
+      }
+
+      if (
+        path === '/api/auth/otp/verify'
+        || path === '/api/login/verify'
+        || path === '/api/device/verify'
+        || path === '/api/register/verify'
+      ) {
+        const responsePhone = data.user?.phoneNumber || requestBody?.phoneNumber || null;
+        if (data.user && responsePhone) {
+          this._cacheUserHint(responsePhone, { ...data.user, phoneNumber: responsePhone });
+          if (path === '/api/device/verify' || path === '/api/register/verify') {
+            localStorage.setItem(BOUND_PHONE_STORAGE_KEY, responsePhone);
+          }
+        }
+      }
+
+      if (path === '/api/register/verify' && data.credentialRecord) {
+        this._cacheCredentialHint(requestBody?.phoneNumber, data.credentialRecord);
+      }
     }
 
     _maskPhoneNumber(phoneNumber) {
@@ -378,11 +531,12 @@
     // =========================================================
 
     async _walletFetch(path, body) {
+      const requestBody = path === '/api/client-log' ? body : this._prepareWalletRequest(path, body);
       try {
         const res = await fetch(`${WALLET_ORIGIN}${path}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          body: JSON.stringify(requestBody),
         });
 
         const data = await res.json();
@@ -394,11 +548,15 @@
             void this.logClientEvent('wallet_fetch_error', {
               path,
               status: res.status,
-              requestBody: body,
+              requestBody,
               responseBody: data,
             }, 'error');
           }
           throw err;
+        }
+
+        if (path !== '/api/client-log') {
+          this._cacheWalletResponse(path, requestBody, data);
         }
 
         return data;
@@ -406,7 +564,7 @@
         if (path !== '/api/client-log') {
           void this.logClientEvent('wallet_fetch_exception', {
             path,
-            requestBody: body,
+            requestBody,
             error: this._serializeError(error),
           }, 'error');
         }

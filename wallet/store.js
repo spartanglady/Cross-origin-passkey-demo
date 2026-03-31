@@ -160,6 +160,14 @@ function getCredentialById(id) {
   return store.credentials.get(normalizedId) || null;
 }
 
+function removeCredentialsByPhoneNumber(phoneNumber) {
+  for (const [id, cred] of store.credentials) {
+    if (cred.phoneNumber === phoneNumber) {
+      store.credentials.delete(id);
+    }
+  }
+}
+
 function updateCredentialCounter(id, newCounter) {
   const normalizedId = normalizeCredentialId(id);
   if (!normalizedId) return;
@@ -202,6 +210,10 @@ function getDeviceBinding(deviceId) {
   return store.devices.get(deviceId) || null;
 }
 
+function removeDeviceBinding(deviceId) {
+  store.devices.delete(deviceId);
+}
+
 // Pre-seed a demo user
 const demoUser = createUser('1234567890', 'Alex Johnson');
 demoUser.cards = [
@@ -218,6 +230,7 @@ module.exports = {
   addCredential,
   getCredentialsByPhoneNumber,
   getCredentialById,
+  removeCredentialsByPhoneNumber,
   updateCredentialCounter,
   setChallenge,
   getChallenge,
@@ -227,4 +240,5 @@ module.exports = {
   clearOTP,
   addDeviceBinding,
   getDeviceBinding,
+  removeDeviceBinding,
 };

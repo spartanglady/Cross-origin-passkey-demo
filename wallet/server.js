@@ -117,6 +117,39 @@ function restoreUserFromToken(phoneNumber, tokenUser, reason) {
   return null;
 }
 
+function restoreCredentialsFromHints(phoneNumber, credentialHints, reason) {
+  if (!Array.isArray(credentialHints) || credentialHints.length === 0) {
+    return store.getCredentialsByPhoneNumber(phoneNumber);
+  }
+
+  let restoredCount = 0;
+  for (const hint of credentialHints) {
+    if (!hint || hint.phoneNumber !== phoneNumber) continue;
+    if (store.getCredentialById(hint.id)) continue;
+    try {
+      store.addCredential(phoneNumber, {
+        id: hint.id,
+        publicKey: Buffer.from(hint.publicKey, 'base64url'),
+        counter: Number(hint.counter) || 0,
+        transports: Array.isArray(hint.transports) ? hint.transports : [],
+      });
+      restoredCount += 1;
+    } catch (_) {
+      // Ignore malformed hint entries
+    }
+  }
+
+  if (restoredCount > 0) {
+    logWalletEvent('warn', 'credentials_restored_from_hints', {
+      phoneNumber: maskPhoneNumber(phoneNumber),
+      reason,
+      restoredCount,
+    });
+  }
+
+  return store.getCredentialsByPhoneNumber(phoneNumber);
+}
+
 function normalizeCredentialId(id) {
   if (!id) return '';
 
@@ -300,14 +333,16 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Phone number lookup
 app.post('/api/lookup', (req, res) => {
-  const { phoneNumber } = req.body;
+  const { phoneNumber, userHint, credentialHints } = req.body || {};
   if (!phoneNumber) return res.status(400).json({ error: 'Phone number required' });
 
-  const credentialCount = store.getCredentialsByPhoneNumber(phoneNumber).length;
+  const userCredentials = restoreCredentialsFromHints(phoneNumber, credentialHints, 'lookup');
+  const credentialCount = userCredentials.length;
   const hasPasskey = credentialCount > 0;
   let user = store.getUser(phoneNumber);
-  if (!user && hasPasskey) {
-    user = store.createUser(phoneNumber, `User ${phoneNumber.slice(-4)}`);
+  if (!user && (hasPasskey || userHint?.phoneNumber === phoneNumber)) {
+    user = restoreUserFromToken(phoneNumber, userHint, 'lookup')
+      || store.createUser(phoneNumber, userHint?.displayName || `User ${phoneNumber.slice(-4)}`);
     logWalletEvent('warn', 'user_recreated_for_lookup', {
       phoneNumber: maskPhoneNumber(phoneNumber),
       credentialCount,
@@ -487,6 +522,7 @@ app.post('/api/register/verify', async (req, res) => {
         counter: credential.counter,
         transports: response.response.transports || [],
       });
+      const storedCredential = store.getCredentialById(credential.id);
 
       const user = restoreUserFromToken(phoneNumber, tokenUser, 'register_verify')
         || store.createUser(phoneNumber, tokenUser?.displayName || `User ${phoneNumber.slice(-4)}`);
@@ -496,7 +532,11 @@ app.post('/api/register/verify', async (req, res) => {
         counter: credential.counter,
         transports: response.response.transports || [],
       });
-      res.json({ verified: true, user: { displayName: user.displayName, cards: user.cards } });
+      res.json({
+        verified: true,
+        user: { phoneNumber: user.phoneNumber, displayName: user.displayName, cards: user.cards },
+        credentialRecord: serializeCredentialForToken(storedCredential),
+      });
     } else {
       logWalletEvent('warn', 'passkey_register_verify_rejected', {
         phoneNumber: maskPhoneNumber(phoneNumber),
@@ -512,16 +552,18 @@ app.post('/api/register/verify', async (req, res) => {
 // Authentication: Generate options
 app.post('/api/login/options', async (req, res) => {
   try {
-    const { phoneNumber } = req.body || {};
+    const { phoneNumber, userHint, credentialHints } = req.body || {};
     let userCredentials = [];
     let hasPasskeys = false;
+    let user = null;
 
     if (phoneNumber) {
-      userCredentials = store.getCredentialsByPhoneNumber(phoneNumber);
+      userCredentials = restoreCredentialsFromHints(phoneNumber, credentialHints, 'auth_options');
       hasPasskeys = userCredentials.length > 0;
-      let user = store.getUser(phoneNumber);
-      if (!user && hasPasskeys) {
-        user = store.createUser(phoneNumber, `User ${phoneNumber.slice(-4)}`);
+      user = store.getUser(phoneNumber);
+      if (!user && (hasPasskeys || userHint?.phoneNumber === phoneNumber)) {
+        user = restoreUserFromToken(phoneNumber, userHint, 'auth_options')
+          || store.createUser(phoneNumber, userHint?.displayName || `User ${phoneNumber.slice(-4)}`);
         logWalletEvent('warn', 'user_recreated_for_auth_options', {
           phoneNumber: maskPhoneNumber(phoneNumber),
           credentialCount: userCredentials.length,
@@ -564,7 +606,7 @@ app.post('/api/login/options', async (req, res) => {
     const verificationToken = signChallengeToken({
       type: 'auth',
       phoneNumber: phoneNumber || null,
-      user: phoneNumber ? serializeUserForToken(store.getUser(phoneNumber)) : null,
+      user: phoneNumber ? serializeUserForToken(user || store.getUser(phoneNumber)) : null,
       challenge: options.challenge,
       credentials: tokenCredentials,
       exp: Date.now() + CHALLENGE_TOKEN_TTL_MS,
@@ -749,15 +791,28 @@ app.post('/api/client-log', (req, res) => {
 // --- WebCrypto endpoints ---
 
 app.post('/api/device/challenge', (req, res) => {
-  const { deviceId } = req.body;
+  const { deviceId, phoneNumber } = req.body || {};
   if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
 
   // A simple 32-byte hex challenge string
   const challenge = Array.from(crypto.randomBytes(32))
     .map(b => b.toString(16).padStart(2, '0')).join('');
 
+  const verificationToken = signChallengeToken({
+    type: 'device',
+    deviceId,
+    phoneNumber: phoneNumber || null,
+    challenge,
+    exp: Date.now() + CHALLENGE_TOKEN_TTL_MS,
+  });
+
   store.setChallenge(`dev_${deviceId}`, challenge);
-  res.json({ challenge });
+  logWalletEvent('info', 'device_challenge_created', {
+    deviceId,
+    phoneNumber: maskPhoneNumber(phoneNumber),
+    request: requestLogContext(req),
+  });
+  res.json({ challenge, verificationToken });
 });
 
 app.post('/api/device/register', (req, res) => {
@@ -769,12 +824,27 @@ app.post('/api/device/register', (req, res) => {
   // In a real implementation we would also verify a signed challenge here
   // to prove possession. Doing direct storage for demo purposes.
   store.addDeviceBinding(deviceId, publicKey, phoneNumber);
+  store.createUser(phoneNumber, `User ${phoneNumber.slice(-4)}`);
+
+  logWalletEvent('info', 'device_register_success', {
+    deviceId,
+    phoneNumber: maskPhoneNumber(phoneNumber),
+    request: requestLogContext(req),
+  });
 
   res.json({ success: true });
 });
 
 app.post('/api/device/verify', async (req, res) => {
-  const { deviceId, signature } = req.body; // actual crypto validation is tricky without subtlecrypto in Node
+  const {
+    deviceId,
+    signature,
+    verificationToken,
+    phoneNumber,
+    publicKey,
+    userHint,
+    credentialHints,
+  } = req.body || {}; // actual crypto validation is tricky without subtlecrypto in Node
   // For the sake of the demo, we will blindly trust the deviceID + signature pair if binding exists.
   // In reality: 
   // 1. Get `expectedChallenge` from `getChallenge('dev_' + deviceId)`
@@ -783,15 +853,58 @@ app.post('/api/device/verify', async (req, res) => {
 
   if (!deviceId || !signature) return res.status(400).json({ error: 'deviceId and signature required' });
 
-  const expectedChallenge = store.getChallenge(`dev_${deviceId}`);
+  let expectedChallenge;
+  let tokenPhoneNumber = null;
+
+  logWalletEvent('info', 'device_verify_attempt', {
+    deviceId,
+    phoneNumber: maskPhoneNumber(phoneNumber),
+    hasPublicKeyHint: Boolean(publicKey),
+    hasUserHint: Boolean(userHint),
+    credentialHintCount: Array.isArray(credentialHints) ? credentialHints.length : 0,
+    request: requestLogContext(req),
+  });
+
+  if (verificationToken) {
+    const tokenResult = verifyChallengeToken(verificationToken);
+    if (!tokenResult.valid) {
+      return res.status(400).json({ error: tokenResult.error });
+    }
+    const payload = tokenResult.payload;
+    if (payload.type !== 'device' || payload.deviceId !== deviceId) {
+      return res.status(400).json({ error: 'Verification token does not match device challenge' });
+    }
+    expectedChallenge = payload.challenge;
+    tokenPhoneNumber = payload.phoneNumber || null;
+    if (phoneNumber && tokenPhoneNumber && phoneNumber !== tokenPhoneNumber) {
+      return res.status(400).json({ error: 'Verification token does not match phone number' });
+    }
+  } else {
+    expectedChallenge = store.getChallenge(`dev_${deviceId}`);
+  }
+
   if (!expectedChallenge) return res.status(400).json({ error: 'Challenge missing or expired' });
 
-  const binding = store.getDeviceBinding(deviceId);
+  let binding = store.getDeviceBinding(deviceId);
+  const hintedPhoneNumber = phoneNumber || tokenPhoneNumber || userHint?.phoneNumber || null;
+  if (!binding && hintedPhoneNumber && publicKey) {
+    store.addDeviceBinding(deviceId, publicKey, hintedPhoneNumber);
+    binding = store.getDeviceBinding(deviceId);
+    logWalletEvent('warn', 'device_binding_restored_from_hints', {
+      deviceId,
+      phoneNumber: maskPhoneNumber(hintedPhoneNumber),
+      request: requestLogContext(req),
+    });
+  }
   if (!binding) return res.status(404).json({ error: 'Device binding not found' });
+  if (hintedPhoneNumber && binding.phoneNumber !== hintedPhoneNumber) {
+    return res.status(400).json({ error: 'Device binding does not match requested user' });
+  }
 
-  let user = store.getUser(binding.phoneNumber);
+  let user = restoreUserFromToken(binding.phoneNumber, userHint, 'device_verify')
+    || store.getUser(binding.phoneNumber);
   if (!user) {
-    user = store.createUser(binding.phoneNumber, `User ${binding.phoneNumber.slice(-4)}`);
+    user = store.createUser(binding.phoneNumber, userHint?.displayName || `User ${binding.phoneNumber.slice(-4)}`);
     logWalletEvent('warn', 'user_recreated_for_device_verify', {
       deviceId,
       phoneNumber: maskPhoneNumber(binding.phoneNumber),
@@ -799,7 +912,7 @@ app.post('/api/device/verify', async (req, res) => {
   }
 
   // Assuming signature is valid for demo
-  const hasPasskey = store.getCredentialsByPhoneNumber(binding.phoneNumber).length > 0;
+  const hasPasskey = restoreCredentialsFromHints(binding.phoneNumber, credentialHints, 'device_verify').length > 0;
 
   logWalletEvent('info', 'device_verify_success', {
     deviceId,

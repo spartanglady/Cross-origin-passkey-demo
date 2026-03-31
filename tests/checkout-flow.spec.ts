@@ -152,6 +152,120 @@ test('wallet users keep the same saved cards for a phone number', async () => {
   expect(normalizedUser.cards).toHaveLength(2);
 });
 
+test('wallet login options can restore passkey credentials from phone-bound client hints', async ({ request }) => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const store = require('../wallet/store');
+  const phoneNumber = nextPhoneNumber();
+  const user = store.createUser(phoneNumber, `User ${phoneNumber.slice(-4)}`);
+  const credentialHint = {
+    id: Buffer.from(`credential-${phoneNumber}`).toString('base64url'),
+    publicKey: Buffer.from(`public-key-${phoneNumber}`).toString('base64url'),
+    counter: 7,
+    transports: ['internal'],
+    phoneNumber,
+  };
+
+  store.addCredential(phoneNumber, {
+    id: credentialHint.id,
+    publicKey: Buffer.from(credentialHint.publicKey, 'base64url'),
+    counter: credentialHint.counter,
+    transports: credentialHint.transports,
+  });
+  expect(store.getCredentialsByPhoneNumber(phoneNumber)).toHaveLength(1);
+
+  store.removeCredentialsByPhoneNumber(phoneNumber);
+  expect(store.getCredentialsByPhoneNumber(phoneNumber)).toHaveLength(0);
+
+  const res = await request.post(`${WALLET_ORIGIN}/api/login/options`, {
+    data: {
+      phoneNumber,
+      userHint: {
+        phoneNumber,
+        displayName: user.displayName,
+        cards: user.cards,
+      },
+      credentialHints: [credentialHint],
+    },
+  });
+
+  expect(res.ok()).toBeTruthy();
+  const payload = await res.json();
+  expect(payload.hasPasskeys).toBe(true);
+
+  const tokenPayload = decodeSignedTokenPayload(payload.verificationToken);
+  expect(tokenPayload.user.phoneNumber).toBe(phoneNumber);
+  expect(tokenPayload.credentials).toEqual([
+    expect.objectContaining({
+      id: credentialHint.id,
+      phoneNumber,
+    }),
+  ]);
+});
+
+test('wallet device verify can restore a phone-bound device binding from client hints', async ({ request }) => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const store = require('../wallet/store');
+  const phoneNumber = nextPhoneNumber();
+  const user = store.createUser(phoneNumber, `User ${phoneNumber.slice(-4)}`);
+  const deviceId = `dev_${phoneNumber}`;
+  const publicKey = Buffer.from(`device-public-key-${phoneNumber}`).toString('base64');
+
+  store.removeDeviceBinding(deviceId);
+
+  const challengeRes = await request.post(`${WALLET_ORIGIN}/api/device/challenge`, {
+    data: { deviceId, phoneNumber },
+  });
+  expect(challengeRes.ok()).toBeTruthy();
+  const challengePayload = await challengeRes.json();
+
+  const verifyRes = await request.post(`${WALLET_ORIGIN}/api/device/verify`, {
+    data: {
+      deviceId,
+      signature: 'demo-signature',
+      verificationToken: challengePayload.verificationToken,
+      phoneNumber,
+      publicKey,
+      userHint: {
+        phoneNumber,
+        displayName: user.displayName,
+        cards: user.cards,
+      },
+    },
+  });
+
+  expect(verifyRes.ok()).toBeTruthy();
+  await expect(verifyRes.json()).resolves.toEqual(expect.objectContaining({
+    verified: true,
+    hasPasskey: false,
+    user: expect.objectContaining({
+      phoneNumber,
+      displayName: user.displayName,
+      cards: user.cards,
+    }),
+  }));
+
+  const secondChallengeRes = await request.post(`${WALLET_ORIGIN}/api/device/challenge`, {
+    data: { deviceId },
+  });
+  expect(secondChallengeRes.ok()).toBeTruthy();
+  const secondChallengePayload = await secondChallengeRes.json();
+
+  const secondVerifyRes = await request.post(`${WALLET_ORIGIN}/api/device/verify`, {
+    data: {
+      deviceId,
+      signature: 'demo-signature',
+      verificationToken: secondChallengePayload.verificationToken,
+    },
+  });
+  expect(secondVerifyRes.ok()).toBeTruthy();
+  await expect(secondVerifyRes.json()).resolves.toEqual(expect.objectContaining({
+    verified: true,
+    user: expect.objectContaining({
+      phoneNumber,
+    }),
+  }));
+});
+
 test('real passkey registration and returning-user authentication succeed', async ({ page }) => {
   const phoneNumber = nextPhoneNumber();
   const bridgeWarnings: string[] = [];

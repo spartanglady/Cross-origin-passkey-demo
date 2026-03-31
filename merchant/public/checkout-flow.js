@@ -822,8 +822,7 @@ class PassWalletCheckout {
         this.navigateTo('pw-step-payment');
         return true;
       } else if (result.status === 404) {
-        localStorage.removeItem('pw_device_id');
-        localStorage.removeItem('pw_mock_key');
+        sdk.clearDeviceState();
         if (window.indexedDB) {
           import('https://unpkg.com/idb-keyval@6.0.3/dist/index.js?module')
             .then(({ del }) => del('device_key'))
@@ -835,8 +834,7 @@ class PassWalletCheckout {
       this._logClientError('device_binding_login_failed', err);
       // If 404, clear stale keys
       if (err.status === 404) {
-        localStorage.removeItem('pw_device_id');
-        localStorage.removeItem('pw_mock_key');
+        sdk.clearDeviceState();
         if (window.indexedDB) {
           import('https://unpkg.com/idb-keyval@6.0.3/dist/index.js?module')
             .then(({ del }) => del('device_key'))
