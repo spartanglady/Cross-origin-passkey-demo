@@ -83,6 +83,40 @@ function requestLogContext(req) {
   };
 }
 
+function serializeUserForToken(user) {
+  if (!user) return null;
+  return {
+    id: user.id || null,
+    phoneNumber: user.phoneNumber || null,
+    displayName: user.displayName || null,
+    cards: Array.isArray(user.cards) ? user.cards : [],
+    createdAt: user.createdAt || null,
+  };
+}
+
+function restoreUserFromToken(phoneNumber, tokenUser, reason) {
+  let user = store.getUser(phoneNumber);
+  if (user) return user;
+
+  if (tokenUser && tokenUser.phoneNumber === phoneNumber) {
+    user = store.saveUser({
+      id: tokenUser.id || crypto.randomUUID(),
+      phoneNumber,
+      displayName: tokenUser.displayName || `User ${phoneNumber.slice(-4)}`,
+      cards: Array.isArray(tokenUser.cards) ? tokenUser.cards : store.generateMockCards(2),
+      createdAt: tokenUser.createdAt || new Date().toISOString(),
+    });
+    logWalletEvent('warn', 'user_restored_from_token', {
+      phoneNumber: maskPhoneNumber(phoneNumber),
+      reason,
+      cardCount: user.cards.length,
+    });
+    return user;
+  }
+
+  return null;
+}
+
 function normalizeCredentialId(id) {
   if (!id) return '';
 
@@ -375,6 +409,7 @@ app.post('/api/register/options', async (req, res) => {
     const verificationToken = signChallengeToken({
       type: 'reg',
       phoneNumber,
+      user: serializeUserForToken(user),
       challenge: options.challenge,
       exp: Date.now() + CHALLENGE_TOKEN_TTL_MS,
     });
@@ -400,6 +435,7 @@ app.post('/api/register/verify', async (req, res) => {
     const expectedRPID = RP_ID;
     const expectedOrigin = WALLET_ORIGIN;
     let expectedChallenge;
+    let tokenUser = null;
 
     logWalletEvent('info', 'passkey_register_verify_attempt', {
       phoneNumber: maskPhoneNumber(phoneNumber),
@@ -419,6 +455,7 @@ app.post('/api/register/verify', async (req, res) => {
         return res.status(400).json({ error: 'Verification token does not match registration request' });
       }
       expectedChallenge = payload.challenge;
+      tokenUser = payload.user || null;
     } else {
       expectedChallenge = store.getChallenge(`reg:${phoneNumber}`);
       if (!expectedChallenge) {
@@ -443,7 +480,8 @@ app.post('/api/register/verify', async (req, res) => {
         transports: response.response.transports || [],
       });
 
-      const user = store.getUser(phoneNumber);
+      const user = restoreUserFromToken(phoneNumber, tokenUser, 'register_verify')
+        || store.createUser(phoneNumber, tokenUser?.displayName || `User ${phoneNumber.slice(-4)}`);
       logWalletEvent('info', 'passkey_register_verify_success', {
         phoneNumber: maskPhoneNumber(phoneNumber),
         credentialId: summarizeId(credential.id),
@@ -511,6 +549,7 @@ app.post('/api/login/options', async (req, res) => {
     const verificationToken = signChallengeToken({
       type: 'auth',
       phoneNumber: phoneNumber || null,
+      user: phoneNumber ? serializeUserForToken(store.getUser(phoneNumber)) : null,
       challenge: options.challenge,
       credentials: tokenCredentials,
       exp: Date.now() + CHALLENGE_TOKEN_TTL_MS,
@@ -539,6 +578,7 @@ app.post('/api/login/verify', async (req, res) => {
     const expectedOrigin = WALLET_ORIGIN;
     let tokenPhoneNumber = null;
     let tokenCredentials = [];
+    let tokenUser = null;
 
     logWalletEvent('info', 'passkey_auth_verify_attempt', {
       phoneNumber: maskPhoneNumber(phoneNumber),
@@ -560,6 +600,7 @@ app.post('/api/login/verify', async (req, res) => {
       }
       expectedChallenge = payload.challenge;
       tokenPhoneNumber = payload.phoneNumber || null;
+      tokenUser = payload.user || null;
       tokenCredentials = Array.isArray(payload.credentials)
         ? payload.credentials.map(deserializeCredentialFromToken).filter(Boolean)
         : [];
@@ -592,7 +633,7 @@ app.post('/api/login/verify', async (req, res) => {
     if (targetPhoneNumber !== credential.phoneNumber) {
       return res.status(400).json({ error: 'Credential does not match requested user' });
     }
-    const user = store.getUser(targetPhoneNumber);
+    const user = restoreUserFromToken(targetPhoneNumber, tokenUser, 'auth_verify');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }

@@ -80,6 +80,14 @@ function createUser(phoneNumber, displayName) {
   return user;
 }
 
+function saveUser(user) {
+  if (!user || !user.phoneNumber) {
+    throw new Error('Valid user with phoneNumber required');
+  }
+  store.users.set(user.phoneNumber, user);
+  return user;
+}
+
 function getUser(phoneNumber) {
   return store.users.get(phoneNumber) || null;
 }
@@ -167,6 +175,7 @@ demoUser.cards = [
 
 module.exports = {
   createUser,
+  saveUser,
   getUser,
   getUserById,
   addCredential,

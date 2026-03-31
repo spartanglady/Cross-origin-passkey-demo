@@ -11,6 +11,11 @@ function nextPhoneNumber() {
   return `555${String(1_000_000 + phoneSeed).slice(-7)}`;
 }
 
+function decodeSignedTokenPayload(token: string) {
+  const [body] = token.split('.');
+  return JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+}
+
 async function seedWalletUser(request: APIRequestContext, phoneNumber: string) {
   const sendOTP = await request.post(`${WALLET_ORIGIN}/api/auth/otp/send`, {
     data: { phoneNumber },
@@ -89,6 +94,10 @@ test('WebAuthn options are pinned to the wallet RP ID', async ({ request }) => {
   const registerOptions = await registerOptionsRes.json();
   const registrationRpId = registerOptions?.options?.rp?.id ?? registerOptions?.options?.rpID;
   expect(registrationRpId).toBe('localhost');
+  const registerTokenPayload = decodeSignedTokenPayload(registerOptions.verificationToken);
+  expect(registerTokenPayload.phoneNumber).toBe(phoneNumber);
+  expect(registerTokenPayload.user.phoneNumber).toBe(phoneNumber);
+  expect(registerTokenPayload.user.displayName).toBe(`User ${phoneNumber.slice(-4)}`);
 
   const loginOptionsRes = await request.post(`${WALLET_ORIGIN}/api/login/options`, {
     data: { phoneNumber },
@@ -97,6 +106,10 @@ test('WebAuthn options are pinned to the wallet RP ID', async ({ request }) => {
   const loginOptions = await loginOptionsRes.json();
   const authenticationRpId = loginOptions?.options?.rpId ?? loginOptions?.options?.rpID;
   expect(authenticationRpId).toBe('localhost');
+  const authTokenPayload = decodeSignedTokenPayload(loginOptions.verificationToken);
+  expect(authTokenPayload.phoneNumber).toBe(phoneNumber);
+  expect(authTokenPayload.user.phoneNumber).toBe(phoneNumber);
+  expect(Array.isArray(authTokenPayload.user.cards)).toBe(true);
 });
 
 test('wallet client log endpoint accepts browser diagnostics', async ({ request }) => {
