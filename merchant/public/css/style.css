@@ -503,7 +503,7 @@ button {
 .checkout-layout {
   display: flex;
   min-height: 100vh;
-  flex-direction: column-reverse;
+  flex-direction: column;
 }
 
 @media (min-width: 768px) {
