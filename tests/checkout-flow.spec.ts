@@ -34,6 +34,25 @@ async function waitForSDK(page: Page) {
   await page.waitForFunction(() => Boolean((window as any).PassWallet));
 }
 
+async function installVirtualAuthenticator(page: Page) {
+  const session = await page.context().newCDPSession(page);
+  await session.send('WebAuthn.enable');
+  const authenticator = await session.send('WebAuthn.addVirtualAuthenticator', {
+    options: {
+      protocol: 'ctap2',
+      transport: 'internal',
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  });
+  return {
+    session,
+    authenticatorId: authenticator.authenticatorId as string,
+  };
+}
+
 async function openMerchant(page: Page) {
   await page.goto(MERCHANT_ORIGIN);
 }
@@ -101,6 +120,46 @@ test('wallet client log endpoint accepts browser diagnostics', async ({ request 
 
   expect(res.ok()).toBeTruthy();
   await expect(res.json()).resolves.toEqual({ logged: true });
+});
+
+test('real passkey registration and returning-user authentication succeed', async ({ page }) => {
+  const phoneNumber = nextPhoneNumber();
+  const bridgeWarnings: string[] = [];
+  await installVirtualAuthenticator(page);
+
+  page.on('console', (msg) => {
+    const text = msg.text();
+    if (text.includes('startRegistration() was not called correctly') || text.includes('startAuthentication() was not called correctly')) {
+      bridgeWarnings.push(text);
+    }
+  });
+
+  await openMerchant(page);
+  await addItemAndStartCheckout(page);
+
+  await enterPhone(page, phoneNumber);
+  await enterOTP(page);
+
+  await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
+  await page.locator('#pw-cvv-input').fill('123');
+  await expect(page.locator('#pw-pay-btn')).toBeEnabled();
+  await page.locator('#pw-pay-btn').click();
+
+  await expect(page.locator('#pw-step-register-passkey.pw-active')).toBeVisible();
+  await page.frameLocator('#pw-bridge-iframe').locator('#bridge-btn').click();
+  await expectSuccess(page);
+  await page.locator('#pw-continue-shopping-btn').click();
+
+  await page.locator('.add-to-cart-btn').first().click();
+  await page.locator('#start-checkout-btn').click();
+
+  await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
+  await expect(page.locator('#pw-pay-btn')).toHaveText('Pay Now');
+  await page.locator('#pw-pay-btn').click();
+  await page.frameLocator('#pw-bridge-iframe').locator('#bridge-btn').click();
+
+  await expectSuccess(page);
+  expect(bridgeWarnings).toEqual([]);
 });
 
 test('first-time user completes OTP + CVV flow and skips passkey registration', async ({ page }) => {

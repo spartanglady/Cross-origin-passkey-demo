@@ -147,7 +147,7 @@
     try {
       let result;
       if (type === 'auth') {
-        result = await startAuthentication(options);
+        result = await startAuthentication({ optionsJSON: options });
         sendClientLog('info', 'passkey_operation_succeeded', {
           type,
           requestId,
@@ -159,7 +159,7 @@
           payload: result,
         });
       } else if (type === 'register') {
-        result = await startRegistration(options);
+        result = await startRegistration({ optionsJSON: options });
         sendClientLog('info', 'passkey_operation_succeeded', {
           type,
           requestId,
