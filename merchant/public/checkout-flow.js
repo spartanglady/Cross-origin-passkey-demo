@@ -34,8 +34,15 @@ class PassWalletCheckout {
       'pw-step-processing': document.getElementById('pw-step-processing'),
       'pw-step-success': document.getElementById('pw-step-success'),
     };
+    this.checkoutChrome = {
+      header: document.getElementById('checkout-pane-header'),
+      title: document.getElementById('checkout-pane-title'),
+      subtitle: document.getElementById('checkout-pane-subtitle'),
+      badge: document.getElementById('checkout-secured-badge'),
+    };
 
     this._bindEvents();
+    this._syncCheckoutChrome(this.currentStep);
     this._init();
   }
 
@@ -197,6 +204,55 @@ class PassWalletCheckout {
     }
 
     this.currentStep = stepId;
+    this._syncCheckoutChrome(stepId);
+  }
+
+  _syncCheckoutChrome(stepId) {
+    const chromeByStep = {
+      'pw-step-phone': {
+        showHeader: true,
+        title: 'Checkout',
+        subtitle: 'Enter your details to complete your purchase.',
+        showBadge: true,
+      },
+      'pw-step-payment': {
+        showHeader: true,
+        title: 'Checkout',
+        subtitle: 'Review your saved card and complete your purchase.',
+        showBadge: true,
+      },
+      'pw-step-otp': {
+        showHeader: false,
+        showBadge: true,
+      },
+      'pw-step-register-passkey': {
+        showHeader: false,
+        showBadge: true,
+      },
+      'pw-step-processing': {
+        showHeader: false,
+        showBadge: true,
+      },
+      'pw-step-success': {
+        showHeader: false,
+        showBadge: false,
+      },
+    };
+    const chrome = chromeByStep[stepId] || chromeByStep['pw-step-phone'];
+    const { header, title, subtitle, badge } = this.checkoutChrome;
+
+    if (header) {
+      header.hidden = !chrome.showHeader;
+    }
+    if (title && chrome.title) {
+      title.textContent = chrome.title;
+    }
+    if (subtitle && chrome.subtitle) {
+      subtitle.textContent = chrome.subtitle;
+    }
+    if (badge) {
+      badge.hidden = chrome.showBadge === false;
+    }
   }
 
   // =========================================================
@@ -903,5 +959,6 @@ class PassWalletCheckout {
         if (step) step.classList.remove('pw-active');
       });
     }
+    this._syncCheckoutChrome('pw-step-phone');
   }
 }

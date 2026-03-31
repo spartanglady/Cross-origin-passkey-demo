@@ -654,6 +654,11 @@ button {
   margin-bottom: 2rem;
 }
 
+#checkout-pane-header[hidden],
+#checkout-secured-badge[hidden] {
+  display: none !important;
+}
+
 /* (Payment radio options removed — single checkout flow) */
 
 /* ==========================================================

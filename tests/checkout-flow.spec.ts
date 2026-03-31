@@ -85,11 +85,16 @@ test('first-time user completes OTP + CVV flow and skips passkey registration', 
 
   await openMerchant(page);
   await addItemAndStartCheckout(page);
+  await expect(page.locator('#checkout-pane-header')).toBeVisible();
+  await expect(page.locator('#checkout-pane-subtitle')).toHaveText('Enter your details to complete your purchase.');
 
   await enterPhone(page, phoneNumber);
+  await expect(page.locator('#checkout-pane-header')).toBeHidden();
   await enterOTP(page);
 
   await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
+  await expect(page.locator('#checkout-pane-header')).toBeVisible();
+  await expect(page.locator('#checkout-pane-subtitle')).toHaveText('Review your saved card and complete your purchase.');
   await expect(page.locator('#pw-cvv-input')).toBeVisible();
 
   await page.locator('#pw-cvv-input').fill('123');
@@ -97,9 +102,12 @@ test('first-time user completes OTP + CVV flow and skips passkey registration', 
   await page.locator('#pw-pay-btn').click();
 
   await expect(page.locator('#pw-step-register-passkey.pw-active')).toBeVisible();
+  await expect(page.locator('#checkout-pane-header')).toBeHidden();
   await page.locator('#pw-skip-passkey-btn').click();
 
   await expectSuccess(page);
+  await expect(page.locator('#checkout-pane-header')).toBeHidden();
+  await expect(page.locator('#checkout-secured-badge')).toBeHidden();
 });
 
 test('phone-entry passkey attempt falls back to OTP when passkey auth is cancelled', async ({ page, request }) => {
