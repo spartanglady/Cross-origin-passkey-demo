@@ -171,7 +171,7 @@ test('returning WebCrypto user without passkey is prompted for OTP at pay time',
   await addItemAndStartCheckout(page);
 
   await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
-  await expect(page.locator('#pw-pay-btn')).toHaveText('Verify');
+  await expect(page.locator('#pw-pay-btn')).toHaveText('Pay Now');
   await expect(page.locator('#pw-cvv-input')).toHaveCount(0);
   await page.locator('#pw-pay-btn').click();
 
@@ -210,7 +210,7 @@ test('returning WebCrypto user with passkey falls back to OTP when passkey auth 
   await addItemAndStartCheckout(page);
 
   await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
-  await expect(page.locator('#pw-pay-btn')).toHaveText('Verify');
+  await expect(page.locator('#pw-pay-btn')).toHaveText('Pay Now');
   await page.locator('#pw-pay-btn').click();
   await expect(page.locator('#pw-step-otp.pw-active')).toBeVisible();
 });
@@ -262,7 +262,7 @@ test('returning WebCrypto user with passkey can switch to OTP when passkey auth 
   await addItemAndStartCheckout(page);
 
   await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
-  await expect(page.locator('#pw-pay-btn')).toHaveText('Verify');
+  await expect(page.locator('#pw-pay-btn')).toHaveText('Pay Now');
   await page.locator('#pw-pay-btn').click();
   await expect(page.locator('#pw-step-otp.pw-active')).toBeVisible();
 });
@@ -293,7 +293,7 @@ test('returning user can click Change and log in as a different phone', async ({
   await addItemAndStartCheckout(page);
 
   await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
-  await expect(page.locator('#pw-pay-btn')).toHaveText('Verify');
+  await expect(page.locator('#pw-pay-btn')).toHaveText('Pay Now');
   await expect(page.locator('#pw-display-phone')).toContainText(originalPhone);
 
   await page.locator('#pw-logout-btn').click();

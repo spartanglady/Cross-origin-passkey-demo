@@ -384,7 +384,7 @@ class PassWalletCheckout {
 
     if (payBtn) {
       if (this.flowMode === 'WEBCRYPTO_RETURNING') {
-        payBtn.textContent = 'Verify';
+        payBtn.textContent = 'Pay Now';
       } else {
         payBtn.innerHTML = `Pay <span id="pw-pay-amount">$${this.amount}</span>`;
       }
@@ -493,7 +493,7 @@ class PassWalletCheckout {
       if (this.hasPasskey) {
         const payBtn = document.getElementById('pw-pay-btn');
         payBtn.disabled = true;
-        payBtn.textContent = 'Verify';
+        payBtn.textContent = 'Pay Now';
 
         try {
           // Step 1: Fetch auth options
@@ -510,7 +510,7 @@ class PassWalletCheckout {
             // No server-known passkey for this phone in this session: use OTP.
             this.hasPasskey = false;
             payBtn.disabled = false;
-            payBtn.textContent = 'Verify';
+            payBtn.textContent = 'Pay Now';
             this.flowMode = 'WEBCRYPTO_OTP_FALLBACK';
             await this._beginOTPFlow(flowEpoch);
             return;
@@ -546,7 +546,7 @@ class PassWalletCheckout {
           sdk.hidePasskeyButton();
           payBtn.style.display = '';
           payBtn.disabled = false;
-          payBtn.textContent = 'Verify';
+          payBtn.textContent = 'Pay Now';
 
           if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
             this._showError('Passkey verification failed. Continue with OTP.');
