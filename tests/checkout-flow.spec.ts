@@ -171,6 +171,7 @@ test('returning WebCrypto user without passkey is prompted for OTP at pay time',
   await addItemAndStartCheckout(page);
 
   await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
+  await expect(page.locator('#pw-pay-btn')).toHaveText('Verify');
   await expect(page.locator('#pw-cvv-input')).toHaveCount(0);
   await page.locator('#pw-pay-btn').click();
 
@@ -209,6 +210,59 @@ test('returning WebCrypto user with passkey falls back to OTP when passkey auth 
   await addItemAndStartCheckout(page);
 
   await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
+  await expect(page.locator('#pw-pay-btn')).toHaveText('Verify');
+  await page.locator('#pw-pay-btn').click();
+  await expect(page.locator('#pw-step-otp.pw-active')).toBeVisible();
+});
+
+test('returning WebCrypto user with passkey can switch to OTP when passkey auth fails', async ({ page, request }) => {
+  const phoneNumber = nextPhoneNumber();
+  const user = await seedWalletUser(request, phoneNumber);
+
+  await page.addInitScript(({ deviceId }) => {
+    localStorage.setItem('pw_device_id', deviceId);
+    localStorage.setItem('pw_mock_key', 'mock-webcrypto-public-key');
+  }, { deviceId: `dev_${phoneNumber}` });
+
+  await openMerchant(page);
+  await waitForSDK(page);
+  await page.evaluate(({ returningUser }) => {
+    const sdk = (window as any).PassWallet;
+    const originalWalletFetch = sdk._walletFetch.bind(sdk);
+
+    sdk.challengeDevice = async () => ({ challenge: 'test-challenge' });
+    sdk.verifyDevice = async () => ({
+      verified: true,
+      hasPasskey: true,
+      user: returningUser,
+    });
+    sdk._walletFetch = async (path: string, body: unknown) => {
+      if (path === '/api/login/options') {
+        return {
+          options: {
+            challenge: 'test-challenge',
+            rpId: 'localhost',
+            allowCredentials: [{ id: 'test-credential-id', type: 'public-key' }],
+            userVerification: 'preferred',
+          },
+          sessionId: 'session-1',
+          verificationToken: 'token-1',
+        };
+      }
+      return originalWalletFetch(path, body);
+    };
+    sdk._postToBridge = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const err = new Error('Simulated non-cancel passkey failure');
+      (err as any).name = 'UnknownError';
+      throw err;
+    };
+  }, { returningUser: user });
+
+  await addItemAndStartCheckout(page);
+
+  await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
+  await expect(page.locator('#pw-pay-btn')).toHaveText('Verify');
   await page.locator('#pw-pay-btn').click();
   await expect(page.locator('#pw-step-otp.pw-active')).toBeVisible();
 });
@@ -239,6 +293,7 @@ test('returning user can click Change and log in as a different phone', async ({
   await addItemAndStartCheckout(page);
 
   await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
+  await expect(page.locator('#pw-pay-btn')).toHaveText('Verify');
   await expect(page.locator('#pw-display-phone')).toContainText(originalPhone);
 
   await page.locator('#pw-logout-btn').click();

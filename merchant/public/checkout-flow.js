@@ -376,10 +376,20 @@ class PassWalletCheckout {
     const phoneDisplay = document.getElementById('pw-display-phone');
     const avatar = document.getElementById('pw-user-avatar');
     const payAmountEl = document.getElementById('pw-pay-amount');
+    const payBtn = document.getElementById('pw-pay-btn');
 
     phoneDisplay.textContent = this.phoneNumber;
     avatar.textContent = this.user.displayName.charAt(0).toUpperCase();
     if (payAmountEl) payAmountEl.textContent = `$${this.amount}`;
+
+    if (payBtn) {
+      if (this.flowMode === 'WEBCRYPTO_RETURNING') {
+        payBtn.textContent = 'Verify';
+      } else {
+        payBtn.innerHTML = `Pay <span id="pw-pay-amount">$${this.amount}</span>`;
+      }
+      payBtn.style.display = '';
+    }
 
     if (!this.user.cards || this.user.cards.length === 0) {
       document.getElementById('pw-card-list').innerHTML = '<p style="color:#64748B;text-align:center;padding:1rem;">No cards saved.</p>';
@@ -483,7 +493,7 @@ class PassWalletCheckout {
       if (this.hasPasskey) {
         const payBtn = document.getElementById('pw-pay-btn');
         payBtn.disabled = true;
-        payBtn.textContent = 'Verifying...';
+        payBtn.textContent = 'Verify';
 
         try {
           // Step 1: Fetch auth options
@@ -492,6 +502,19 @@ class PassWalletCheckout {
           });
           const optData = this._normalizePasskeyOptions(optionsData);
           if (!this._isCurrentFlow(flowEpoch)) return;
+
+          const allowCredentials = Array.isArray(optData.options?.allowCredentials)
+            ? optData.options.allowCredentials
+            : [];
+          if (allowCredentials.length === 0) {
+            // No server-known passkey for this phone in this session: use OTP.
+            this.hasPasskey = false;
+            payBtn.disabled = false;
+            payBtn.textContent = 'Verify';
+            this.flowMode = 'WEBCRYPTO_OTP_FALLBACK';
+            await this._beginOTPFlow(flowEpoch);
+            return;
+          }
 
           // Step 2: Options ready — hide pay button, show bridge button
           payBtn.style.display = 'none';
@@ -523,14 +546,13 @@ class PassWalletCheckout {
           sdk.hidePasskeyButton();
           payBtn.style.display = '';
           payBtn.disabled = false;
-          payBtn.innerHTML = 'Pay <span id="pw-pay-amount">$' + this.amount + '</span>';
+          payBtn.textContent = 'Verify';
 
-          if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
-            this.flowMode = 'WEBCRYPTO_OTP_FALLBACK';
-            await this._beginOTPFlow(flowEpoch);
-          } else {
-            this._showError('Authentication failed.');
+          if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
+            this._showError('Passkey verification failed. Continue with OTP.');
           }
+          this.flowMode = 'WEBCRYPTO_OTP_FALLBACK';
+          await this._beginOTPFlow(flowEpoch);
         }
       } else {
         // No passkey, fall to OTP

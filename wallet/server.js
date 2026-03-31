@@ -29,6 +29,110 @@ const DEMO_OTP = process.env.DEMO_OTP || '111111';
 const CHALLENGE_TOKEN_TTL_MS = 5 * 60 * 1000;
 const CHALLENGE_TOKEN_SECRET = process.env.CHALLENGE_TOKEN_SECRET || process.env.WALLET_URL || 'passwallet-demo-secret';
 
+function normalizeCredentialId(id) {
+  if (!id) return '';
+
+  if (typeof id === 'string') {
+    const trimmed = id.trim();
+    if (!trimmed) return '';
+
+    try {
+      const bytes = Buffer.from(trimmed, 'base64url');
+      if (bytes.length > 0) return bytes.toString('base64url');
+    } catch (_) {
+      // Continue to next strategy
+    }
+
+    try {
+      const bytes = Buffer.from(trimmed, 'base64');
+      if (bytes.length > 0) return bytes.toString('base64url');
+    } catch (_) {
+      // Fall through
+    }
+
+    return trimmed;
+  }
+
+  if (Buffer.isBuffer(id) || id instanceof Uint8Array) {
+    return Buffer.from(id).toString('base64url');
+  }
+
+  return '';
+}
+
+function normalizeCredentialPublicKey(publicKey) {
+  if (!publicKey) return '';
+
+  if (typeof publicKey === 'string') {
+    const trimmed = publicKey.trim();
+    if (!trimmed) return '';
+
+    try {
+      const bytes = Buffer.from(trimmed, 'base64url');
+      if (bytes.length > 0) return bytes.toString('base64url');
+    } catch (_) {
+      // Continue to next strategy
+    }
+
+    try {
+      const bytes = Buffer.from(trimmed, 'base64');
+      if (bytes.length > 0) return bytes.toString('base64url');
+    } catch (_) {
+      // Fall through
+    }
+
+    return '';
+  }
+
+  if (Buffer.isBuffer(publicKey) || publicKey instanceof Uint8Array) {
+    return Buffer.from(publicKey).toString('base64url');
+  }
+
+  if (Array.isArray(publicKey)) {
+    return Buffer.from(publicKey).toString('base64url');
+  }
+
+  if (
+    typeof publicKey === 'object'
+    && publicKey.type === 'Buffer'
+    && Array.isArray(publicKey.data)
+  ) {
+    return Buffer.from(publicKey.data).toString('base64url');
+  }
+
+  return '';
+}
+
+function serializeCredentialForToken(credential) {
+  if (!credential) return null;
+  const id = normalizeCredentialId(credential.id);
+  const publicKey = normalizeCredentialPublicKey(credential.publicKey);
+  if (!id || !publicKey) return null;
+
+  return {
+    id,
+    publicKey,
+    counter: Number(credential.counter) || 0,
+    transports: Array.isArray(credential.transports) ? credential.transports : [],
+    phoneNumber: credential.phoneNumber || null,
+  };
+}
+
+function deserializeCredentialFromToken(record) {
+  if (!record || typeof record !== 'object') return null;
+  const id = normalizeCredentialId(record.id);
+  const publicKey = normalizeCredentialPublicKey(record.publicKey);
+  if (!id || !publicKey) return null;
+
+  return {
+    id,
+    publicKey: Buffer.from(publicKey, 'base64url'),
+    counter: Number(record.counter) || 0,
+    transports: Array.isArray(record.transports) ? record.transports : [],
+    phoneNumber: record.phoneNumber || null,
+  };
+}
+
 function signChallengeToken(payload) {
   const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
   const signature = crypto.createHmac('sha256', CHALLENGE_TOKEN_SECRET).update(body).digest('base64url');
@@ -286,6 +390,10 @@ app.post('/api/login/options', async (req, res) => {
       userCredentials = store.getCredentialsByPhoneNumber(phoneNumber);
     }
 
+    const tokenCredentials = userCredentials
+      .map(serializeCredentialForToken)
+      .filter(Boolean);
+
     const options = await generateAuthenticationOptions({
       rpID: RP_ID,
       allowCredentials: userCredentials.map(c => ({
@@ -301,6 +409,7 @@ app.post('/api/login/options', async (req, res) => {
       type: 'auth',
       phoneNumber: phoneNumber || null,
       challenge: options.challenge,
+      credentials: tokenCredentials,
       exp: Date.now() + CHALLENGE_TOKEN_TTL_MS,
     });
 
@@ -322,15 +431,11 @@ app.post('/api/login/verify', async (req, res) => {
       return res.status(400).json({ error: 'Response required' });
     }
 
-    const credential = store.getCredentialById(response.id);
-    if (!credential) {
-      return res.status(400).json({ error: 'Credential not found' });
-    }
-
     let expectedChallenge;
     const expectedRPID = RP_ID;
     const expectedOrigin = WALLET_ORIGIN;
     let tokenPhoneNumber = null;
+    let tokenCredentials = [];
 
     if (verificationToken) {
       const tokenResult = verifyChallengeToken(verificationToken);
@@ -343,6 +448,9 @@ app.post('/api/login/verify', async (req, res) => {
       }
       expectedChallenge = payload.challenge;
       tokenPhoneNumber = payload.phoneNumber || null;
+      tokenCredentials = Array.isArray(payload.credentials)
+        ? payload.credentials.map(deserializeCredentialFromToken).filter(Boolean)
+        : [];
       if (phoneNumber && tokenPhoneNumber && phoneNumber !== tokenPhoneNumber) {
         return res.status(400).json({ error: 'Verification token does not match phone number' });
       }
@@ -352,6 +460,15 @@ app.post('/api/login/verify', async (req, res) => {
       if (!expectedChallenge) {
         return res.status(400).json({ error: 'Challenge not found or expired' });
       }
+    }
+
+    const responseCredentialId = normalizeCredentialId(response.id);
+    let credential = store.getCredentialById(responseCredentialId || response.id);
+    if (!credential && responseCredentialId && tokenCredentials.length > 0) {
+      credential = tokenCredentials.find(c => c.id === responseCredentialId) || null;
+    }
+    if (!credential) {
+      return res.status(400).json({ error: 'Credential not found. Use OTP instead.' });
     }
 
     const targetPhoneNumber = phoneNumber || tokenPhoneNumber || credential.phoneNumber;
@@ -376,7 +493,7 @@ app.post('/api/login/verify', async (req, res) => {
     });
 
     if (verification.verified) {
-      store.updateCredentialCounter(response.id, verification.authenticationInfo.newCounter);
+      store.updateCredentialCounter(responseCredentialId || response.id, verification.authenticationInfo.newCounter);
       res.json({ verified: true, user: { phoneNumber: user.phoneNumber, displayName: user.displayName, cards: user.cards } });
     } else {
       res.status(400).json({ verified: false, error: 'Authentication failed' });

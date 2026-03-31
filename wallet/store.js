@@ -9,6 +9,37 @@ const store = {
   devices: new Map(), // deviceId -> { publicKey, phoneNumber } (for WebCrypto possession binding)
 };
 
+function normalizeCredentialId(id) {
+  if (!id) return '';
+
+  if (typeof id === 'string') {
+    const trimmed = id.trim();
+    if (!trimmed) return '';
+
+    try {
+      const bytes = Buffer.from(trimmed, 'base64url');
+      if (bytes.length > 0) return bytes.toString('base64url');
+    } catch (_) {
+      // Continue to next decode strategy
+    }
+
+    try {
+      const bytes = Buffer.from(trimmed, 'base64');
+      if (bytes.length > 0) return bytes.toString('base64url');
+    } catch (_) {
+      // Use as-is as the last resort
+    }
+
+    return trimmed;
+  }
+
+  if (Buffer.isBuffer(id) || id instanceof Uint8Array) {
+    return Buffer.from(id).toString('base64url');
+  }
+
+  return String(id);
+}
+
 // Card brands with their styles
 const CARD_TEMPLATES = [
   { brand: 'Visa', color1: '#1a1f71', color2: '#2557d6', prefix: '4' },
@@ -61,7 +92,11 @@ function getUserById(id) {
 }
 
 function addCredential(phoneNumber, credential) {
-  store.credentials.set(credential.id, { ...credential, phoneNumber });
+  const normalizedId = normalizeCredentialId(credential.id);
+  if (!normalizedId) {
+    throw new Error('Invalid credential id');
+  }
+  store.credentials.set(normalizedId, { ...credential, id: normalizedId, phoneNumber });
 }
 
 function getCredentialsByPhoneNumber(phoneNumber) {
@@ -75,11 +110,15 @@ function getCredentialsByPhoneNumber(phoneNumber) {
 }
 
 function getCredentialById(id) {
-  return store.credentials.get(id) || null;
+  const normalizedId = normalizeCredentialId(id);
+  if (!normalizedId) return null;
+  return store.credentials.get(normalizedId) || null;
 }
 
 function updateCredentialCounter(id, newCounter) {
-  const cred = store.credentials.get(id);
+  const normalizedId = normalizeCredentialId(id);
+  if (!normalizedId) return;
+  const cred = store.credentials.get(normalizedId);
   if (cred) {
     cred.counter = newCounter;
   }
