@@ -21,8 +21,7 @@ export default defineConfig({
   webServer: {
     command: `WALLET_ORIGIN=${walletOrigin} WALLET_URL=${walletOrigin} MERCHANT_URL=${merchantOrigin} npm start`,
     url: merchantOrigin,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });
-

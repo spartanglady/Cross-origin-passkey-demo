@@ -183,7 +183,12 @@
      */
     async authenticatePasskey(phone) {
       // 1. Get options from server
-      const optData = await this._walletFetch('/api/login/options', { phoneNumber: phone });
+      const loginData = await this._walletFetch('/api/login/options', { phoneNumber: phone });
+      const optData = loginData && loginData.options ? loginData : {
+        options: loginData,
+        sessionId: undefined,
+        verificationToken: undefined,
+      };
 
       // 2. Send to bridge, wait for user to click and complete ceremony
       const asseResp = await this._postToBridge('PASSKEY_AUTH_REQUEST', {
@@ -194,6 +199,7 @@
       return this._walletFetch('/api/login/verify', {
         phoneNumber: phone,
         sessionId: optData.sessionId,
+        verificationToken: optData.verificationToken,
         response: asseResp,
       });
     }
@@ -207,19 +213,24 @@
      */
     async registerPasskey(phone, displayName) {
       // 1. Get options from server
-      const options = await this._walletFetch('/api/register/options', {
+      const registrationData = await this._walletFetch('/api/register/options', {
         phoneNumber: phone,
         displayName,
       });
+      const regData = registrationData && registrationData.options ? registrationData : {
+        options: registrationData,
+        verificationToken: undefined,
+      };
 
       // 2. Send to bridge
       const attResp = await this._postToBridge('PASSKEY_REGISTER_REQUEST', {
-        options,
+        options: regData.options,
       });
 
       // 3. Verify on server
       return this._walletFetch('/api/register/verify', {
         phoneNumber: phone,
+        verificationToken: regData.verificationToken,
         response: attResp,
       });
     }

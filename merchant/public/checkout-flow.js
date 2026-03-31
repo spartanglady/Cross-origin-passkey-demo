@@ -43,6 +43,11 @@ class PassWalletCheckout {
     return !this.isDestroyed && flowEpoch === this._flowEpoch;
   }
 
+  _normalizePasskeyOptions(data) {
+    if (data && data.options) return data;
+    return { options: data, verificationToken: null };
+  }
+
   // =========================================================
   // Initialization
   // =========================================================
@@ -238,10 +243,7 @@ class PassWalletCheckout {
       const sdk = window.PassWallet;
       sdk.hidePasskeyButton();
       this.flowMode = 'INITIAL';
-      await this._sendOTP();
-      if (!this._isCurrentFlow(flowEpoch)) return;
-      this.navigateTo('pw-step-otp');
-      setTimeout(() => document.getElementById('pw-otp-input').focus(), 300);
+      await this._beginOTPFlow(flowEpoch);
     }
   }
 
@@ -261,9 +263,10 @@ class PassWalletCheckout {
 
     try {
       // Step 1: Fetch assertion options from server
-      const optData = await sdk._walletFetch('/api/login/options', {
+      const optionsData = await sdk._walletFetch('/api/login/options', {
         phoneNumber: this.phoneNumber,
       });
+      const optData = this._normalizePasskeyOptions(optionsData);
       if (!this._isCurrentFlow(flowEpoch)) return;
 
       // Step 2: Options ready — hide loading, show bridge button on phone step
@@ -285,6 +288,7 @@ class PassWalletCheckout {
       const verData = await sdk._walletFetch('/api/login/verify', {
         phoneNumber: this.phoneNumber,
         sessionId: optData.sessionId,
+        verificationToken: optData.verificationToken,
         response: asseResp,
       });
       if (!this._isCurrentFlow(flowEpoch)) return;
@@ -304,9 +308,7 @@ class PassWalletCheckout {
       if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
         // Passkey cancelled, fall back to OTP
         this.flowMode = 'INITIAL';
-        await this._sendOTP();
-        this.navigateTo('pw-step-otp');
-        setTimeout(() => document.getElementById('pw-otp-input').focus(), 300);
+        await this._beginOTPFlow(flowEpoch);
       } else {
         this._showError('Authentication failed. Please try again.');
       }
@@ -479,9 +481,10 @@ class PassWalletCheckout {
 
         try {
           // Step 1: Fetch auth options
-          const optData = await sdk._walletFetch('/api/login/options', {
+          const optionsData = await sdk._walletFetch('/api/login/options', {
             phoneNumber: this.phoneNumber,
           });
+          const optData = this._normalizePasskeyOptions(optionsData);
           if (!this._isCurrentFlow(flowEpoch)) return;
 
           // Step 2: Options ready — hide pay button, show bridge button
@@ -501,6 +504,7 @@ class PassWalletCheckout {
           const verData = await sdk._walletFetch('/api/login/verify', {
             phoneNumber: this.phoneNumber,
             sessionId: optData.sessionId,
+            verificationToken: optData.verificationToken,
             response: asseResp,
           });
           if (!this._isCurrentFlow(flowEpoch)) return;
@@ -517,9 +521,7 @@ class PassWalletCheckout {
 
           if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
             this.flowMode = 'WEBCRYPTO_OTP_FALLBACK';
-            await this._sendOTP();
-            this.navigateTo('pw-step-otp');
-            setTimeout(() => document.getElementById('pw-otp-input').focus(), 300);
+            await this._beginOTPFlow(flowEpoch);
           } else {
             this._showError('Authentication failed.');
           }
@@ -527,10 +529,7 @@ class PassWalletCheckout {
       } else {
         // No passkey, fall to OTP
         this.flowMode = 'WEBCRYPTO_OTP_FALLBACK';
-        await this._sendOTP();
-        if (!this._isCurrentFlow(flowEpoch)) return;
-        this.navigateTo('pw-step-otp');
-        setTimeout(() => document.getElementById('pw-otp-input').focus(), 300);
+        await this._beginOTPFlow(flowEpoch);
       }
 
     } else if (this.flowMode === 'PASSKEY_LOGIN') {
@@ -557,10 +556,11 @@ class PassWalletCheckout {
 
     try {
       // Step 1: Fetch registration options from server
-      const options = await sdk._walletFetch('/api/register/options', {
+      const optionsData = await sdk._walletFetch('/api/register/options', {
         phoneNumber: this.phoneNumber,
         displayName: this.user.displayName,
       });
+      const regData = this._normalizePasskeyOptions(optionsData);
       if (!this._isCurrentFlow(flowEpoch)) return;
 
       // Step 2: Options ready — hide loading, show bridge button
@@ -569,7 +569,7 @@ class PassWalletCheckout {
 
       // Step 3: Send options to bridge — bridge renders its button, waits for user click
       const attResp = await sdk._postToBridge('PASSKEY_REGISTER_REQUEST', {
-        options,
+        options: regData.options,
       });
       if (!this._isCurrentFlow(flowEpoch)) return;
 
@@ -577,6 +577,7 @@ class PassWalletCheckout {
       sdk.hidePasskeyButton();
       const result = await sdk._walletFetch('/api/register/verify', {
         phoneNumber: this.phoneNumber,
+        verificationToken: regData.verificationToken,
         response: attResp,
       });
       if (!this._isCurrentFlow(flowEpoch)) return;
@@ -792,15 +793,24 @@ class PassWalletCheckout {
     return !x[2] ? x[1] : '(' + x[1] + ') ' + x[2] + (x[3] ? '-' + x[3] : '');
   }
 
-  async _sendOTP() {
+  async _beginOTPFlow(flowEpoch = this._flowEpoch) {
     try {
-      const sdk = window.PassWallet;
-      await sdk.sendOTP(this.phoneNumber);
-      const displayEl = document.getElementById('pw-display-otp-phone');
-      if (displayEl) displayEl.textContent = `+1 ${this._formatPhone(this.phoneNumber)}`;
+      await this._sendOTP();
     } catch (err) {
-      console.error('Failed to send OTP', err);
+      if (!this._isCurrentFlow(flowEpoch)) return;
+      this._showError('Unable to send verification code. Please try again.');
+      return;
     }
+    if (!this._isCurrentFlow(flowEpoch)) return;
+    this.navigateTo('pw-step-otp');
+    setTimeout(() => document.getElementById('pw-otp-input').focus(), 300);
+  }
+
+  async _sendOTP() {
+    const sdk = window.PassWallet;
+    await sdk.sendOTP(this.phoneNumber);
+    const displayEl = document.getElementById('pw-display-otp-phone');
+    if (displayEl) displayEl.textContent = `+1 ${this._formatPhone(this.phoneNumber)}`;
   }
 
   _showError(msg) {
