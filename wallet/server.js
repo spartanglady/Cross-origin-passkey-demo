@@ -581,7 +581,6 @@ app.post('/api/login/options', async (req, res) => {
       allowCredentials: userCredentials.map(c => ({
         id: c.id,
         type: 'public-key',
-        transports: c.transports,
       })),
       userVerification: 'preferred',
     });
@@ -590,6 +589,11 @@ app.post('/api/login/options', async (req, res) => {
     // that account's known credential IDs. Omitting allowCredentials is the
     // usernameless/discoverable pattern, and that breaks some Android third-
     // party passkey providers such as 1Password during assertion lookup.
+    //
+    // We also intentionally omit `allowCredentials[].transports`. The WebAuthn
+    // client is allowed to use those hints to conclude that no authenticator is
+    // available, and Android/provider combinations can report transport values
+    // that are too narrow for a later assertion on the same device.
 
     logWalletEvent('info', 'passkey_auth_options', {
       phoneNumber: maskPhoneNumber(phoneNumber),
@@ -597,6 +601,9 @@ app.post('/api/login/options', async (req, res) => {
       hasPasskeys,
       credentialCount: userCredentials.length,
       allowCredentialsIncluded: Array.isArray(options.allowCredentials),
+      allowCredentialTransportHintsIncluded: Array.isArray(options.allowCredentials)
+        ? options.allowCredentials.some((entry) => Array.isArray(entry.transports) && entry.transports.length > 0)
+        : false,
       request: requestLogContext(req),
     });
 

@@ -197,6 +197,7 @@ test('wallet login options can restore passkey credentials from phone-bound clie
       type: 'public-key',
     }),
   ]);
+  expect(payload.options.allowCredentials[0]).not.toHaveProperty('transports');
 
   const tokenPayload = decodeSignedTokenPayload(payload.verificationToken);
   expect(tokenPayload.user.phoneNumber).toBe(phoneNumber);
