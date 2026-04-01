@@ -968,9 +968,18 @@ class PassWalletCheckout {
 
   _handleLogout() {
     this._flowEpoch += 1;
-    if (window.PassWallet) {
-      window.PassWallet.abortPendingRequests();
-      window.PassWallet.hidePasskeyButton();
+    const sdk = window.PassWallet;
+    if (sdk) {
+      sdk.abortPendingRequests();
+      sdk.hidePasskeyButton();
+      if (typeof sdk.clearLocalWalletState === 'function') {
+        sdk.clearLocalWalletState();
+      }
+    }
+    if (window.indexedDB) {
+      import('https://unpkg.com/idb-keyval@6.0.3/dist/index.js?module')
+        .then(({ del }) => del('device_key'))
+        .catch(console.warn);
     }
 
     // Reset checkout state and go back to phone for manual user switch

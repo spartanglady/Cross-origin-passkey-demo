@@ -259,6 +259,12 @@
       this._pendingDeviceVerificationToken = null;
     }
 
+    clearLocalWalletState() {
+      this.clearDeviceState();
+      localStorage.removeItem(USER_HINTS_STORAGE_KEY);
+      localStorage.removeItem(CREDENTIAL_HINTS_STORAGE_KEY);
+    }
+
     async challengeDevice(deviceId) {
       const data = await this._walletFetch('/api/device/challenge', { deviceId });
       this._pendingDeviceVerificationToken = data && data.verificationToken ? data.verificationToken : null;

@@ -1,19 +1,42 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 const MERCHANT_ORIGIN = 'http://localhost:3000';
 const WALLET_ORIGIN = 'http://localhost:3001';
 const OTP_CODE = '111111';
 
+const phoneRunSeed = Math.floor(Math.random() * 9000) + 1000;
 let phoneSeed = 0;
 
 function nextPhoneNumber() {
   phoneSeed += 1;
-  return `555${String(1_000_000 + phoneSeed).slice(-7)}`;
+  return `555${String(phoneRunSeed).padStart(4, '0')}${String(phoneSeed).padStart(3, '0')}`;
 }
 
 function decodeSignedTokenPayload(token: string) {
   const [body] = token.split('.');
   return JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+}
+
+function loadIsolatedStore(storeFile: string) {
+  const storeModulePath = require.resolve('../wallet/store');
+  const previousStoreFile = process.env.WALLET_STORE_FILE;
+
+  delete require.cache[storeModulePath];
+  process.env.WALLET_STORE_FILE = storeFile;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const isolatedStore = require('../wallet/store');
+
+  if (previousStoreFile === undefined) {
+    delete process.env.WALLET_STORE_FILE;
+  } else {
+    process.env.WALLET_STORE_FILE = previousStoreFile;
+  }
+  delete require.cache[storeModulePath];
+
+  return isolatedStore;
 }
 
 async function seedWalletUser(request: APIRequestContext, phoneNumber: string) {
@@ -150,6 +173,44 @@ test('wallet users keep the same saved cards for a phone number', async () => {
   expect(normalizedUser.displayName).toBe('User Renamed');
   expect(normalizedUser.cards).toEqual(firstUser.cards);
   expect(normalizedUser.cards).toHaveLength(2);
+});
+
+test('wallet store persists account passkeys and device bindings across reloads', async () => {
+  const storeFile = path.join(os.tmpdir(), `passwallet-store-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  const phoneNumber = nextPhoneNumber();
+  const credentialId = Buffer.from(`credential-${phoneNumber}`).toString('base64url');
+  const publicKey = Buffer.from(`public-key-${phoneNumber}`).toString('base64url');
+  const deviceId = `dev_${phoneNumber}`;
+
+  const firstStore = loadIsolatedStore(storeFile);
+  const user = firstStore.createUser(phoneNumber, `User ${phoneNumber.slice(-4)}`);
+  firstStore.addCredential(phoneNumber, {
+    id: credentialId,
+    publicKey: Buffer.from(publicKey, 'base64url'),
+    counter: 9,
+    transports: ['internal'],
+  });
+  firstStore.addDeviceBinding(deviceId, 'device-public-key', phoneNumber);
+
+  const secondStore = loadIsolatedStore(storeFile);
+  expect(secondStore.getUser(phoneNumber)).toEqual(expect.objectContaining({
+    phoneNumber,
+    displayName: user.displayName,
+    cards: user.cards,
+  }));
+  expect(secondStore.getCredentialsByPhoneNumber(phoneNumber)).toEqual([
+    expect.objectContaining({
+      id: credentialId,
+      phoneNumber,
+      counter: 9,
+    }),
+  ]);
+  expect(secondStore.getDeviceBinding(deviceId)).toEqual({
+    publicKey: 'device-public-key',
+    phoneNumber,
+  });
+
+  fs.rmSync(storeFile, { force: true });
 });
 
 test('wallet login options can restore passkey credentials from phone-bound client hints', async ({ request }) => {
@@ -639,4 +700,67 @@ test('returning user can click Change and log in as a different phone', async ({
   await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
   await expect(page.locator('#pw-display-phone')).toContainText(replacementPhone);
   await expect(page.locator('#pw-cvv-input')).toBeVisible();
+});
+
+test('change clears saved local wallet state before the next visit', async ({ page, request, context }) => {
+  const phoneNumber = nextPhoneNumber();
+  const user = await seedWalletUser(request, phoneNumber);
+
+  await page.addInitScript(({ deviceId, boundPhone }) => {
+    localStorage.setItem('pw_device_id', deviceId);
+    localStorage.setItem('pw_mock_key', 'mock-webcrypto-public-key');
+    localStorage.setItem('pw_bound_phone', boundPhone);
+    localStorage.setItem('pw_user_hints_v1', JSON.stringify({
+      [boundPhone]: {
+        phoneNumber: boundPhone,
+        displayName: 'Stored User',
+        cards: [],
+      },
+    }));
+    localStorage.setItem('pw_credential_hints_v1', JSON.stringify({
+      [boundPhone]: [{
+        id: 'credential-id',
+        publicKey: 'credential-key',
+        counter: 1,
+        phoneNumber: boundPhone,
+      }],
+    }));
+  }, { deviceId: `dev_${phoneNumber}`, boundPhone: phoneNumber });
+
+  await openMerchant(page);
+  await waitForSDK(page);
+  await page.evaluate(({ returningUser }) => {
+    const sdk = (window as any).PassWallet;
+    sdk.challengeDevice = async () => ({ challenge: 'test-challenge' });
+    sdk.verifyDevice = async () => ({
+      verified: true,
+      hasPasskey: false,
+      user: returningUser,
+    });
+  }, { returningUser: user });
+
+  await addItemAndStartCheckout(page);
+  await expect(page.locator('#pw-step-payment.pw-active')).toBeVisible();
+  await page.locator('#pw-logout-btn').click();
+  await expect(page.locator('#pw-step-phone.pw-active')).toBeVisible();
+
+  await expect.poll(async () => page.evaluate(() => ({
+    deviceId: localStorage.getItem('pw_device_id'),
+    mockKey: localStorage.getItem('pw_mock_key'),
+    boundPhone: localStorage.getItem('pw_bound_phone'),
+    userHints: localStorage.getItem('pw_user_hints_v1'),
+    credentialHints: localStorage.getItem('pw_credential_hints_v1'),
+  }))).toEqual({
+    deviceId: null,
+    mockKey: null,
+    boundPhone: null,
+    userHints: null,
+    credentialHints: null,
+  });
+
+  const freshPage = await context.newPage();
+  await openMerchant(freshPage);
+  await addItemAndStartCheckout(freshPage);
+  await expect(freshPage.locator('#pw-step-phone.pw-active')).toBeVisible();
+  await freshPage.close();
 });

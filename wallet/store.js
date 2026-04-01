@@ -1,5 +1,10 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
+
+const STORE_FILE = process.env.WALLET_STORE_FILE || path.join(os.tmpdir(), 'passwallet-demo-store.json');
 
 // In-memory stores
 const store = {
@@ -97,17 +102,89 @@ function generateMockCards(count = 2, phoneNumber = 'demo') {
   return buildStableCards(phoneNumber, count);
 }
 
+function serializeCredential(credential) {
+  return {
+    ...credential,
+    id: normalizeCredentialId(credential.id),
+    publicKey: credential.publicKey ? Buffer.from(credential.publicKey).toString('base64url') : '',
+  };
+}
+
+function persistStore() {
+  const payload = {
+    users: Array.from(store.users.entries()),
+    credentials: Array.from(store.credentials.entries()).map(([id, credential]) => [id, serializeCredential(credential)]),
+    devices: Array.from(store.devices.entries()),
+  };
+
+  try {
+    fs.mkdirSync(path.dirname(STORE_FILE), { recursive: true });
+    const tmpFile = `${STORE_FILE}.tmp`;
+    fs.writeFileSync(tmpFile, JSON.stringify(payload, null, 2), 'utf8');
+    fs.renameSync(tmpFile, STORE_FILE);
+  } catch (error) {
+    console.warn('[PassWallet][store_persist_failed]', error.message);
+  }
+}
+
+function loadPersistedStore() {
+  if (!fs.existsSync(STORE_FILE)) return;
+
+  try {
+    const payload = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
+
+    if (Array.isArray(payload.users)) {
+      for (const [phoneNumber, user] of payload.users) {
+        if (!phoneNumber || !user) continue;
+        store.users.set(phoneNumber, {
+          id: user.id || `user_${hashSeed(`user:id:${phoneNumber}`).slice(0, 24)}`,
+          phoneNumber,
+          displayName: user.displayName || defaultDisplayName(phoneNumber),
+          cards: Array.isArray(user.cards) && user.cards.length > 0 ? user.cards : buildStableCards(phoneNumber, 2),
+          createdAt: user.createdAt || new Date().toISOString(),
+        });
+      }
+    }
+
+    if (Array.isArray(payload.credentials)) {
+      for (const [id, credential] of payload.credentials) {
+        const normalizedId = normalizeCredentialId(id || credential?.id);
+        if (!normalizedId || !credential?.phoneNumber || !credential.publicKey) continue;
+        store.credentials.set(normalizedId, {
+          ...credential,
+          id: normalizedId,
+          publicKey: Buffer.from(credential.publicKey, 'base64url'),
+        });
+      }
+    }
+
+    if (Array.isArray(payload.devices)) {
+      for (const [deviceId, binding] of payload.devices) {
+        if (!deviceId || !binding?.phoneNumber || !binding.publicKey) continue;
+        store.devices.set(deviceId, {
+          publicKey: binding.publicKey,
+          phoneNumber: binding.phoneNumber,
+        });
+      }
+    }
+  } catch (error) {
+    console.warn('[PassWallet][store_load_failed]', error.message);
+  }
+}
+
 function createUser(phoneNumber, displayName) {
   const existing = store.users.get(phoneNumber);
   if (existing) {
     if (displayName && existing.displayName !== displayName) {
       existing.displayName = displayName;
+      persistStore();
     }
     return existing;
   }
 
   const user = buildStableUser(phoneNumber, displayName);
   store.users.set(phoneNumber, user);
+  persistStore();
   return user;
 }
 
@@ -122,6 +199,7 @@ function saveUser(user) {
     user.createdAt || existing?.createdAt || new Date().toISOString(),
   );
   store.users.set(user.phoneNumber, normalized);
+  persistStore();
   return normalized;
 }
 
@@ -142,6 +220,7 @@ function addCredential(phoneNumber, credential) {
     throw new Error('Invalid credential id');
   }
   store.credentials.set(normalizedId, { ...credential, id: normalizedId, phoneNumber });
+  persistStore();
 }
 
 function getCredentialsByPhoneNumber(phoneNumber) {
@@ -166,6 +245,7 @@ function removeCredentialsByPhoneNumber(phoneNumber) {
       store.credentials.delete(id);
     }
   }
+  persistStore();
 }
 
 function updateCredentialCounter(id, newCounter) {
@@ -174,6 +254,7 @@ function updateCredentialCounter(id, newCounter) {
   const cred = store.credentials.get(normalizedId);
   if (cred) {
     cred.counter = newCounter;
+    persistStore();
   }
 }
 
@@ -204,6 +285,7 @@ function clearOTP(phoneNumber) {
 // Device Binding Management
 function addDeviceBinding(deviceId, publicKey, phoneNumber) {
   store.devices.set(deviceId, { publicKey, phoneNumber });
+  persistStore();
 }
 
 function getDeviceBinding(deviceId) {
@@ -212,15 +294,21 @@ function getDeviceBinding(deviceId) {
 
 function removeDeviceBinding(deviceId) {
   store.devices.delete(deviceId);
+  persistStore();
 }
 
+loadPersistedStore();
+
 // Pre-seed a demo user
-const demoUser = createUser('1234567890', 'Alex Johnson');
-demoUser.cards = [
-  { id: uuidv4(), brand: 'Visa', last4: '4242', expiry: '09/28', color1: '#1a1f71', color2: '#2557d6' },
-  { id: uuidv4(), brand: 'Mastercard', last4: '8888', expiry: '03/27', color1: '#eb001b', color2: '#f79e1b' },
-  { id: uuidv4(), brand: 'Amex', last4: '1234', expiry: '12/29', color1: '#006fcf', color2: '#00aeef' },
-];
+if (!store.users.has('1234567890')) {
+  const demoUser = createUser('1234567890', 'Alex Johnson');
+  demoUser.cards = [
+    { id: uuidv4(), brand: 'Visa', last4: '4242', expiry: '09/28', color1: '#1a1f71', color2: '#2557d6' },
+    { id: uuidv4(), brand: 'Mastercard', last4: '8888', expiry: '03/27', color1: '#eb001b', color2: '#f79e1b' },
+    { id: uuidv4(), brand: 'Amex', last4: '1234', expiry: '12/29', color1: '#006fcf', color2: '#00aeef' },
+  ];
+  persistStore();
+}
 
 module.exports = {
   createUser,
